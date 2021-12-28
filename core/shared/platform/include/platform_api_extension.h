@@ -178,6 +178,9 @@ os_cond_reltimedwait(korp_cond *cond, korp_mutex *mutex, uint64 useconds);
  */
 int
 os_cond_signal(korp_cond *cond);
+int
+os_cond_broadcast(korp_cond *cond);
+
 
 /****************************************************
  *                     Section 2                    *

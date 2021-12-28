@@ -149,6 +149,17 @@ os_mutex_lock(korp_mutex *mutex)
 }
 
 int
+os_mutex_trylock(korp_mutex *mutex)
+{
+    int ret;
+
+    assert(mutex);
+    ret = pthread_mutex_trylock(mutex);
+
+    return ret == 0 ? BHT_OK : BHT_ERROR;
+}
+
+int
 os_mutex_unlock(korp_mutex *mutex)
 {
     int ret;
@@ -255,6 +266,17 @@ os_cond_signal(korp_cond *cond)
     assert(cond);
 
     if (pthread_cond_signal(cond) != BHT_OK)
+        return BHT_ERROR;
+
+    return BHT_OK;
+}
+
+int
+os_cond_broadcast(korp_cond *cond)
+{
+    assert(cond);
+
+    if (pthread_cond_broadcast(cond) != BHT_OK)
         return BHT_ERROR;
 
     return BHT_OK;

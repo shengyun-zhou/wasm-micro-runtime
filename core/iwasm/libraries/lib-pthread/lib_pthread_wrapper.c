@@ -445,11 +445,23 @@ get_thread_info(wasm_exec_env_t exec_env, uint32 handle)
 }
 
 static uint32
-allocate_handle()
+allocate_handle(wasm_exec_env_t env)
 {
     uint32 id;
     os_mutex_lock(&thread_global_lock);
-    id = handle_id++;
+    while (1) 
+    {
+        id = handle_id++;
+        if (id == 0)
+            continue;
+        os_mutex_unlock(&thread_global_lock);
+        if (get_thread_info(env, id))
+        {
+            os_mutex_lock(&thread_global_lock);
+            continue;
+        }
+        break;
+    }
     os_mutex_unlock(&thread_global_lock);
     return id;
 }
@@ -572,7 +584,7 @@ pthread_create_wrapper(wasm_exec_env_t exec_env,
         goto fail;
 
     memset(info_node, 0, sizeof(ThreadInfoNode));
-    thread_handle = allocate_handle();
+    thread_handle = allocate_handle(exec_env);
     info_node->parent_exec_env = exec_env;
     info_node->handle = thread_handle;
     info_node->type = T_THREAD;
@@ -775,7 +787,7 @@ pthread_mutex_init_wrapper(wasm_exec_env_t exec_env, uint32 *mutex, void *attr)
 
     memset(info_node, 0, sizeof(ThreadInfoNode));
     info_node->exec_env = exec_env;
-    info_node->handle = allocate_handle();
+    info_node->handle = allocate_handle(exec_env);
     info_node->type = T_MUTEX;
     info_node->u.mutex = pmutex;
     info_node->status = MUTEX_CREATED;
@@ -800,13 +812,42 @@ fail1:
 }
 
 static int32
+_pthread_mutex_initializer_wrapper(wasm_exec_env_t exec_env)
+{
+    uint32 mutex;
+    if (pthread_mutex_init_wrapper(exec_env, &mutex, NULL) == 0)
+        return mutex;
+    return 0;
+}
+
+static int32
 pthread_mutex_lock_wrapper(wasm_exec_env_t exec_env, uint32 *mutex)
 {
+    if (*mutex == 0)
+    {
+        // Not initialized, it may be used in static initialization
+        pthread_mutex_init_wrapper(exec_env, mutex, NULL);
+    }
     ThreadInfoNode *info_node = get_thread_info(exec_env, *mutex);
     if (!info_node || info_node->type != T_MUTEX)
         return -1;
 
     return os_mutex_lock(info_node->u.mutex);
+}
+
+static int32
+pthread_mutex_trylock_wrapper(wasm_exec_env_t exec_env, uint32 *mutex)
+{
+    if (*mutex == 0)
+    {
+        // Not initialized, it may be used in static initialization
+        pthread_mutex_init_wrapper(exec_env, mutex, NULL);
+    }
+    ThreadInfoNode *info_node = get_thread_info(exec_env, *mutex);
+    if (!info_node || info_node->type != T_MUTEX)
+        return -1;
+
+    return os_mutex_trylock(info_node->u.mutex);
 }
 
 static int32
@@ -854,7 +895,7 @@ pthread_cond_init_wrapper(wasm_exec_env_t exec_env, uint32 *cond, void *attr)
 
     memset(info_node, 0, sizeof(ThreadInfoNode));
     info_node->exec_env = exec_env;
-    info_node->handle = allocate_handle();
+    info_node->handle = allocate_handle(exec_env);
     info_node->type = T_COND;
     info_node->u.cond = pcond;
     info_node->status = COND_CREATED;
@@ -876,6 +917,14 @@ fail1:
     wasm_runtime_free(pcond);
 
     return -1;
+}
+
+static int32 _pthread_cond_initializer_wrapper(wasm_exec_env_t exec_env)
+{
+    int32 cond = 0;
+    if (pthread_cond_init_wrapper(exec_env, &cond, NULL) == 0)
+        return cond;
+    return 0;
 }
 
 static int32
@@ -917,6 +966,13 @@ pthread_cond_timedwait_wrapper(wasm_exec_env_t exec_env, uint32 *cond,
 }
 
 static int32
+_pthread_cond_timedwait_wrapper(wasm_exec_env_t exec_env, uint32 *cond,
+                                uint32 *mutex, uint64 useconds)
+{
+    return pthread_cond_timedwait_wrapper(exec_env, cond, mutex, useconds);
+}
+
+static int32
 pthread_cond_signal_wrapper(wasm_exec_env_t exec_env, uint32 *cond)
 {
     ThreadInfoNode *info_node = get_thread_info(exec_env, *cond);
@@ -924,6 +980,20 @@ pthread_cond_signal_wrapper(wasm_exec_env_t exec_env, uint32 *cond)
         return -1;
 
     return os_cond_signal(info_node->u.cond);
+}
+
+static int32
+pthread_cond_broadcast_wrapper(wasm_exec_env_t exec_env, uint32 *cond)
+{
+    if (*cond == 0)
+    {
+        // Not initialized, 
+    }
+    ThreadInfoNode *info_node = get_thread_info(exec_env, *cond);
+    if (!info_node || info_node->type != T_COND)
+        return -1;
+
+    return os_cond_broadcast(info_node->u.cond);
 }
 
 static int32
@@ -1080,14 +1150,19 @@ static NativeSymbol native_symbols_lib_pthread[] = {
     REG_NATIVE_FUNC(pthread_cancel, "(i)i"),
     REG_NATIVE_FUNC(pthread_self, "()i"),
     REG_NATIVE_FUNC(pthread_exit, "(i)"),
+    REG_NATIVE_FUNC(_pthread_mutex_initializer, "()i"),
     REG_NATIVE_FUNC(pthread_mutex_init, "(**)i"),
     REG_NATIVE_FUNC(pthread_mutex_lock, "(*)i"),
+    REG_NATIVE_FUNC(pthread_mutex_trylock, "(*)i"),
     REG_NATIVE_FUNC(pthread_mutex_unlock, "(*)i"),
     REG_NATIVE_FUNC(pthread_mutex_destroy, "(*)i"),
     REG_NATIVE_FUNC(pthread_cond_init, "(**)i"),
+    REG_NATIVE_FUNC(_pthread_cond_initializer, "()i"),
     REG_NATIVE_FUNC(pthread_cond_wait, "(**)i"),
     REG_NATIVE_FUNC(pthread_cond_timedwait, "(**I)i"),
+    REG_NATIVE_FUNC(_pthread_cond_timedwait, "(**I)i"),
     REG_NATIVE_FUNC(pthread_cond_signal, "(*)i"),
+    REG_NATIVE_FUNC(pthread_cond_broadcast, "(*)i"),
     REG_NATIVE_FUNC(pthread_cond_destroy, "(*)i"),
     REG_NATIVE_FUNC(pthread_key_create, "(*i)i"),
     REG_NATIVE_FUNC(pthread_setspecific, "(ii)i"),
