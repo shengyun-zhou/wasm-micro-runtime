@@ -5,6 +5,7 @@
 
 #include "bh_common.h"
 #include "bh_log.h"
+#include "platform_api_extension.h"
 #include "platform_api_vmcore.h"
 #include "platform_common.h"
 #include "platform_internal.h"
@@ -784,9 +785,17 @@ pthread_mutex_init_wrapper(wasm_exec_env_t exec_env, uint32 *mutex, void *attr)
         return -1;
     }
 
-    if (os_mutex_init(pmutex) != 0) {
-        goto fail1;
+    bool is_recursive = false;
+    if (attr)
+        is_recursive = (*((uint32*)attr) & 1);
+    if (!is_recursive) {
+        if (os_mutex_init(pmutex) != 0)
+            goto fail1;
+    } else {
+        if (os_recursive_mutex_init(pmutex) != 0)
+            goto fail1;
     }
+
 
     if (!(info_node = wasm_runtime_malloc(sizeof(ThreadInfoNode))))
         goto fail2;
