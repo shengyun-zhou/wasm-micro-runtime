@@ -182,6 +182,21 @@ int
 os_cond_broadcast(korp_cond *cond);
 
 
+int
+os_rwlock_init(korp_rwlock *rwlock);
+int
+os_rwlock_rdlock(korp_rwlock *rwlock);
+int
+os_rwlock_tryrdlock(korp_rwlock *rwlock);
+int
+os_rwlock_wrlock(korp_rwlock *rwlock);
+int
+os_rwlock_trywrlock(korp_rwlock *rwlock);
+int
+os_rwlock_unlock(korp_rwlock *rwlock);
+int
+os_rwlock_destroy(korp_rwlock* rwlock);
+
 /****************************************************
  *                     Section 2                    *
  *                   Socket support                 *

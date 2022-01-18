@@ -5,6 +5,8 @@
 
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#include "platform_common.h"
+#include <pthread.h>
 #endif
 #include "platform_api_vmcore.h"
 #include "platform_api_extension.h"
@@ -279,6 +281,69 @@ os_cond_broadcast(korp_cond *cond)
     if (pthread_cond_broadcast(cond) != BHT_OK)
         return BHT_ERROR;
 
+    return BHT_OK;
+}
+
+int
+os_rwlock_init(korp_rwlock *rwlock)
+{
+    assert(rwlock);
+    if (pthread_rwlock_init(rwlock, NULL) != BHT_OK)
+        return BHT_ERROR;
+    return BHT_OK;
+}
+
+int
+os_rwlock_rdlock(korp_rwlock *rwlock)
+{
+    assert(rwlock);
+    if (pthread_rwlock_rdlock(rwlock) != BHT_OK)
+        return BHT_ERROR;
+    return BHT_OK;
+}
+
+int
+os_rwlock_tryrdlock(korp_rwlock *rwlock)
+{
+    assert(rwlock);
+    if (pthread_rwlock_tryrdlock(rwlock) != BHT_OK)
+        return BHT_ERROR;
+    return BHT_OK;
+}
+
+int
+os_rwlock_wrlock(korp_rwlock *rwlock)
+{
+    assert(rwlock);
+    if (pthread_rwlock_wrlock(rwlock) != BHT_OK)
+        return BHT_ERROR;
+    return BHT_OK;
+}
+
+int
+os_rwlock_trywrlock(korp_rwlock *rwlock)
+{
+    assert(rwlock);
+    if (pthread_rwlock_trywrlock(rwlock) != BHT_OK)
+        return BHT_ERROR;
+    return BHT_OK;
+}
+
+int
+os_rwlock_unlock(korp_rwlock *rwlock)
+{
+    assert(rwlock);
+    if (pthread_rwlock_unlock(rwlock) != BHT_OK)
+        return BHT_ERROR;
+    return BHT_OK;
+}
+
+int
+os_rwlock_destroy(korp_rwlock *rwlock)
+{
+    assert(rwlock);
+    if (pthread_rwlock_destroy(rwlock) != BHT_OK)
+        return BHT_ERROR;
     return BHT_OK;
 }
 

@@ -59,6 +59,7 @@ enum {
     T_THREAD,
     T_MUTEX,
     T_COND,
+    T_RWLOCK,
 };
 
 enum thread_status_t {
@@ -76,6 +77,11 @@ enum mutex_status_t {
 enum cond_status_t {
     COND_CREATED,
     COND_DESTROYED,
+};
+
+enum rwlock_status_t {
+    RWLOCK_CREATED,
+    RWLOCK_DESTROYED,
 };
 
 typedef struct ThreadKeyValueNode {
@@ -116,6 +122,7 @@ typedef struct ThreadInfoNode {
         korp_tid thread;
         korp_mutex *mutex;
         korp_cond *cond;
+        korp_rwlock *rwlock;
         /* A copy of the thread return value */
         void *ret;
     } u;
@@ -135,6 +142,7 @@ static korp_mutex thread_global_lock;
 static korp_mutex wasm_pthread_mutex_var_init_lock;
 static korp_mutex wasm_pthread_cond_var_init_lock;
 static korp_mutex wasm_pthread_once_lock;
+static korp_mutex wasm_pthread_rwlock_init_lock;
 static uint32 handle_id = 1;
 
 static void
@@ -176,7 +184,7 @@ bool
 lib_pthread_init()
 {
     if (0 != os_mutex_init(&thread_global_lock) || 0 != os_mutex_init(&wasm_pthread_mutex_var_init_lock) || 0 != os_mutex_init(&wasm_pthread_cond_var_init_lock) ||
-        0 != os_recursive_mutex_init(&wasm_pthread_once_lock))
+        0 != os_recursive_mutex_init(&wasm_pthread_once_lock) || 0 != os_mutex_init(&wasm_pthread_rwlock_init_lock))
         return false;
     bh_list_init(&cluster_info_list);
     if (!wasm_cluster_register_destroy_callback(lib_pthread_destroy_callback)) {
@@ -777,6 +785,12 @@ pthread_exit_wrapper(wasm_exec_env_t exec_env, int32 retval_offset)
     wasm_cluster_exit_thread(exec_env, (void *)(uintptr_t)retval_offset);
 }
 
+static void
+_pthread_exit_wrapper(wasm_exec_env_t exec_env, int32 retval_offset)
+{
+    pthread_exit_wrapper(exec_env, retval_offset);
+}
+
 static int32
 pthread_once_wrapper(wasm_exec_env_t exec_env, uint32 *once_ctrl, 
                      uint32 elem_index /* entry function */)
@@ -1054,6 +1068,136 @@ pthread_cond_destroy_wrapper(wasm_exec_env_t exec_env, uint32 *cond)
 }
 
 static int32
+pthread_rwlock_init_wrapper(wasm_exec_env_t exec_env, uint32* rwlock, void *attr)
+{
+    korp_rwlock *prwlock;
+    ThreadInfoNode *info_node;
+
+    if (!(prwlock = wasm_runtime_malloc(sizeof(korp_mutex))))
+        return -1;
+
+    if (os_rwlock_init(prwlock) != 0)
+        goto fail1;
+
+    if (!(info_node = wasm_runtime_malloc(sizeof(ThreadInfoNode))))
+        goto fail2;
+
+    memset(info_node, 0, sizeof(ThreadInfoNode));
+    info_node->exec_env = exec_env;
+    info_node->handle = allocate_handle(exec_env);
+    info_node->type = T_RWLOCK;
+    info_node->u.rwlock = prwlock;
+    info_node->status = RWLOCK_CREATED;
+
+    if (!append_thread_info_node(info_node))
+        goto fail3;
+
+    if (rwlock)
+        *rwlock = info_node->handle;
+
+    return 0;
+
+fail3:
+    delete_thread_info_node(info_node);
+fail2:
+    os_rwlock_destroy(prwlock);
+fail1:
+    wasm_runtime_free(prwlock);
+
+    return -1;
+}
+
+static int32
+check_pthread_rwlock_inited(wasm_exec_env_t exec_env, uint32 *rwlock)
+{
+    int32 ret = 0;
+    if (*rwlock == 0)
+    {
+        os_mutex_lock(&wasm_pthread_rwlock_init_lock);
+        if (*rwlock == 0)
+            ret = pthread_rwlock_init_wrapper(exec_env, rwlock, NULL);
+        os_mutex_unlock(&wasm_pthread_rwlock_init_lock);
+    }
+    return ret;
+}
+
+static int32
+pthread_rwlock_rdlock_wrapper(wasm_exec_env_t exec_env, uint32 *rwlock)
+{
+    if (check_pthread_rwlock_inited(exec_env, rwlock) != 0)
+        return -1;
+    ThreadInfoNode *rwlock_info_node;
+
+    rwlock_info_node = get_thread_info(exec_env, *rwlock);
+    if (!rwlock_info_node || rwlock_info_node->type != T_RWLOCK)
+        return -1;
+    return os_rwlock_rdlock(rwlock_info_node->u.rwlock);
+}
+
+static int32
+pthread_rwlock_tryrdlock_wrapper(wasm_exec_env_t exec_env, uint32 *rwlock)
+{
+    if (check_pthread_rwlock_inited(exec_env, rwlock) != 0)
+        return -1;
+    ThreadInfoNode *rwlock_info_node;
+
+    rwlock_info_node = get_thread_info(exec_env, *rwlock);
+    if (!rwlock_info_node || rwlock_info_node->type != T_RWLOCK)
+        return -1;
+    return os_rwlock_tryrdlock(rwlock_info_node->u.rwlock);
+}
+
+static int32
+pthread_rwlock_wrlock_wrapper(wasm_exec_env_t exec_env, uint32 *rwlock)
+{
+    if (check_pthread_rwlock_inited(exec_env, rwlock) != 0)
+        return -1;
+    ThreadInfoNode *rwlock_info_node;
+
+    rwlock_info_node = get_thread_info(exec_env, *rwlock);
+    if (!rwlock_info_node || rwlock_info_node->type != T_RWLOCK)
+        return -1;
+    return os_rwlock_wrlock(rwlock_info_node->u.rwlock);
+}
+
+static int32
+pthread_rwlock_trywrlock_wrapper(wasm_exec_env_t exec_env, uint32 *rwlock)
+{
+    if (check_pthread_rwlock_inited(exec_env, rwlock) != 0)
+        return -1;
+    ThreadInfoNode *rwlock_info_node;
+
+    rwlock_info_node = get_thread_info(exec_env, *rwlock);
+    if (!rwlock_info_node || rwlock_info_node->type != T_RWLOCK)
+        return -1;
+    return os_rwlock_trywrlock(rwlock_info_node->u.rwlock);
+}
+
+static int32
+pthread_rwlock_unlock_wrapper(wasm_exec_env_t exec_env, uint32 *rwlock)
+{
+    ThreadInfoNode *rwlock_info_node;
+    rwlock_info_node = get_thread_info(exec_env, *rwlock);
+    if (!rwlock_info_node || rwlock_info_node->type != T_RWLOCK)
+        return -1;
+    return os_rwlock_unlock(rwlock_info_node->u.rwlock);
+}
+
+static int32
+pthread_rwlock_destroy_wrapper(wasm_exec_env_t exec_env, uint32 *rwlock)
+{
+    ThreadInfoNode *rwlock_info_node;
+    rwlock_info_node = get_thread_info(exec_env, *rwlock);
+    if (!rwlock_info_node || rwlock_info_node->type != T_RWLOCK)
+        return -1;
+
+    int32 ret_val = os_rwlock_destroy(rwlock_info_node->u.rwlock);
+    rwlock_info_node->status = RWLOCK_DESTROYED;
+    delete_thread_info_node(rwlock_info_node);
+    return ret_val;
+}
+
+static int32
 pthread_key_create_wrapper(wasm_exec_env_t exec_env, int32 *key,
                            int32 destructor_elem_index)
 {
@@ -1191,6 +1335,7 @@ static NativeSymbol native_symbols_lib_pthread[] = {
     REG_NATIVE_FUNC(pthread_cancel, "(i)i"),
     REG_NATIVE_FUNC(pthread_self, "()i"),
     REG_NATIVE_FUNC(pthread_exit, "(i)"),
+    REG_NATIVE_FUNC(_pthread_exit, "(i)"),
     REG_NATIVE_FUNC(pthread_once, "(*i)i"),
     REG_NATIVE_FUNC(pthread_mutex_init, "(**)i"),
     REG_NATIVE_FUNC(pthread_mutex_init, "(**)i"),
@@ -1205,6 +1350,13 @@ static NativeSymbol native_symbols_lib_pthread[] = {
     REG_NATIVE_FUNC(pthread_cond_signal, "(*)i"),
     REG_NATIVE_FUNC(pthread_cond_broadcast, "(*)i"),
     REG_NATIVE_FUNC(pthread_cond_destroy, "(*)i"),
+    REG_NATIVE_FUNC(pthread_rwlock_init, "(**)i"),
+    REG_NATIVE_FUNC(pthread_rwlock_rdlock, "(*)i"),
+    REG_NATIVE_FUNC(pthread_rwlock_tryrdlock, "(*)i"),
+    REG_NATIVE_FUNC(pthread_rwlock_wrlock, "(*)i"),
+    REG_NATIVE_FUNC(pthread_rwlock_trywrlock, "(*)i"),
+    REG_NATIVE_FUNC(pthread_rwlock_unlock, "(*)i"),
+    REG_NATIVE_FUNC(pthread_rwlock_destroy, "(*)i"),
     REG_NATIVE_FUNC(pthread_key_create, "(*i)i"),
     REG_NATIVE_FUNC(pthread_setspecific, "(ii)i"),
     REG_NATIVE_FUNC(pthread_getspecific, "(i)i"),
