@@ -5,6 +5,7 @@
 
 #include "bh_common.h"
 #include "bh_log.h"
+#include "platform_api_vmcore.h"
 #include "wasm_export.h"
 #include "../interpreter/wasm.h"
 
@@ -1090,6 +1091,12 @@ clock_wrapper(wasm_exec_env_t exec_env)
     return os_time_get_boot_microsecond() * 1000;
 }
 
+static int32
+getpid_wrapper(wasm_exec_env_t exec_env)
+{
+    return os_getpid();
+}
+
 #if WASM_ENABLE_SPEC_TEST != 0
 static void
 print_wrapper(wasm_exec_env_t exec_env)
@@ -1192,6 +1199,7 @@ static NativeSymbol native_symbols_libc_builtin[] = {
     REG_NATIVE_FUNC(__cxa_throw, "(**i)"),
     REG_NATIVE_FUNC(clock_gettime, "(i*)i"),
     REG_NATIVE_FUNC(clock, "()I"),
+    REG_NATIVE_FUNC(getpid, "()i"),
 };
 
 #if WASM_ENABLE_SPEC_TEST != 0
