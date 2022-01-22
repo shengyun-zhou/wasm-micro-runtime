@@ -13,7 +13,6 @@
 #include "../interpreter/wasm.h"
 #include "../common/wasm_runtime_common.h"
 #include "thread_manager.h"
-#include <libio.h>
 
 #if WASM_ENABLE_INTERP != 0
 #include "wasm_runtime.h"

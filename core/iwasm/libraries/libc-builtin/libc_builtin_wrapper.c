@@ -8,10 +8,15 @@
 #include "platform_api_vmcore.h"
 #include "wasm_export.h"
 #include "../interpreter/wasm.h"
+#include "../libc-wasi/libc_wasi_wrapper.h"
+#include "wasm_runtime.h"
+#include "aot_runtime.h"
 
 #if defined(_WIN32) || defined(_WIN32_)
 #define strncasecmp _strnicmp
 #define strcasecmp _stricmp
+#elif defined(__linux__) || defined(__CYGWIN__)
+#include <sched.h>
 #endif
 
 void
@@ -1097,6 +1102,87 @@ getpid_wrapper(wasm_exec_env_t exec_env)
     return os_getpid();
 }
 
+#define __WASI_SC_PAGESIZE 30
+#define __WASI_SC_NPROCESSORS_CONF 83
+#define __WASI_SC_NPROCESSORS_ONLN 84
+#define __WASI_SC_PHYS_PAGES 85
+#define __WASI_SC_AVPHYS_PAGES 86
+
+struct sysconf_meminfo {
+    uint32_t page_size;
+    uint64_t heap_size;
+};
+
+static void get_sysconf_meminfo(wasm_exec_env_t exec_env, struct sysconf_meminfo* meminfo)
+{
+    memset(meminfo, 0, sizeof(*meminfo));
+    meminfo->page_size = os_getpagesize();
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst->module_type == Wasm_Module_Bytecode) {
+        WASMMemoryInstance* mem_inst = ((WASMModuleInstance*)module_inst)->default_memory;
+#if WASM_ENABLE_SHARED_MEMORY != 0
+        os_mutex_lock(&mem_inst->mem_lock);
+#endif
+        meminfo->heap_size = (uint8_t*)mem_inst->heap_data_end - (uint8_t*)mem_inst->heap_data;
+#if WASM_ENABLE_SHARED_MEMORY != 0
+        os_mutex_unlock(&mem_inst->mem_lock);
+#endif
+    } else if (module_inst->module_type == Wasm_Module_AoT) {
+        AOTMemoryInstance* mem_inst = ((AOTModuleInstance*)module_inst)->global_table_data.memory_instances;
+        meminfo->heap_size = (uint8_t*)mem_inst->heap_data_end.ptr - (uint8_t*)mem_inst->heap_data.ptr;
+    }
+}
+
+static wasi_errno_t
+__wamr_ext_sysconf_wrapper(wasm_exec_env_t exec_env, int name, int64_t* ret_val)
+{
+    switch (name) {
+        case __WASI_SC_NPROCESSORS_CONF:
+        case __WASI_SC_NPROCESSORS_ONLN:
+        {
+            *ret_val = 1;
+#ifndef _WIN32
+#if defined(__linux__) || defined(__CYGWIN__)
+            // Get available CPU count of current process
+            cpu_set_t set;
+            if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+                unsigned long count;
+#ifdef CPU_COUNT
+                count = CPU_COUNT(&set);
+#else
+                size_t i;
+                count = 0;
+                for (i = 0; i < CPU_SETSIZE; i++) {
+                    if (CPU_ISSET(i, &set))
+                        count++;
+                }
+#endif
+                if (count > 0)
+                    *ret_val = count;
+            }
+#else
+            long count = sysconf(_SC_NPROCESSORS_ONLN);
+            if (count > 0)
+                *ret_val = count;
+#endif
+#endif
+            return 0;
+        }
+        case __WASI_SC_PAGESIZE:
+        case __WASI_SC_PHYS_PAGES: {
+            struct sysconf_meminfo meminfo;
+            get_sysconf_meminfo(exec_env, &meminfo);
+            if (name == __WASI_SC_PAGESIZE)
+                *ret_val = meminfo.page_size;
+            else if (name == __WASI_SC_PHYS_PAGES)
+                *ret_val = meminfo.heap_size / meminfo.page_size;
+            return 0;
+        }
+        default:
+            return __WASI_EINVAL;
+    }
+}
+
 #if WASM_ENABLE_SPEC_TEST != 0
 static void
 print_wrapper(wasm_exec_env_t exec_env)
@@ -1200,6 +1286,7 @@ static NativeSymbol native_symbols_libc_builtin[] = {
     REG_NATIVE_FUNC(clock_gettime, "(i*)i"),
     REG_NATIVE_FUNC(clock, "()I"),
     REG_NATIVE_FUNC(getpid, "()i"),
+    REG_NATIVE_FUNC(__wamr_ext_sysconf, "(i*)i"),
 };
 
 #if WASM_ENABLE_SPEC_TEST != 0

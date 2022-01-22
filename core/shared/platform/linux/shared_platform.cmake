@@ -3,7 +3,7 @@
 
 set (PLATFORM_SHARED_DIR ${CMAKE_CURRENT_LIST_DIR})
 
-add_definitions(-DBH_PLATFORM_LINUX)
+add_definitions(-DBH_PLATFORM_LINUX -D_GNU_SOURCE)
 
 include_directories(${PLATFORM_SHARED_DIR})
 include_directories(${PLATFORM_SHARED_DIR}/../include)
