@@ -21,6 +21,11 @@
 #include "refcount.h"
 #include "rights.h"
 #include "str.h"
+#include <ifaddrs.h>
+#include <net/if.h>
+#ifdef __linux__
+#include <netpacket/packet.h>
+#endif
 
 #if 0 /* TODO: -std=gnu99 causes compile error, comment them first */
 // struct iovec must have the same layout as __wasi_iovec_t.
@@ -193,6 +198,56 @@ convert_clockid(__wasi_clockid_t in, clockid_t *out)
             return false;
     }
 }
+
+static void
+host_sockaddr_to_wasi_sockaddr(const struct sockaddr* host_sockaddr, __wasi_sockaddr_t * app_sockaddr)
+{
+    if (!host_sockaddr)
+        return;
+    if (host_sockaddr->sa_family == AF_INET) {
+        struct sockaddr_in* host_v4addr = (struct sockaddr_in*)host_sockaddr;
+        __wasi_sockaddr_in_app_t * app_v4addr = (__wasi_sockaddr_in_app_t *)app_sockaddr;
+        memset(app_v4addr, 0, sizeof(*app_v4addr));
+        app_v4addr->sin_family = __WASI_AF_INET;
+        app_v4addr->sin_port = host_v4addr->sin_port;
+        app_v4addr->sin_addr._s_addr = host_v4addr->sin_addr.s_addr;
+    } else if (host_sockaddr->sa_family == AF_INET6) {
+        struct sockaddr_in6* host_v6addr = (struct sockaddr_in6*)host_sockaddr;
+        __wasi_sockaddr_in6_app_t * app_v6addr = (__wasi_sockaddr_in6_app_t *)app_sockaddr;
+        memset(app_v6addr, 0, sizeof(*app_v6addr));
+        app_v6addr->sin6_family = __WASI_AF_INET6;
+        app_v6addr->sin6_port = host_v6addr->sin6_port;
+        app_v6addr->sin6_flowinfo = host_v6addr->sin6_flowinfo;
+        app_v6addr->sin6_scope_id = host_v6addr->sin6_scope_id;
+        memcpy(app_v6addr->sin6_addr._s6_addr, host_v6addr->sin6_addr.s6_addr, 16);
+    }
+}
+
+static __wasi_errno_t
+wasi_sockaddr_to_host_sockaddr(const __wasi_sockaddr_t * app_sockaddr, const struct sockaddr* host_sockaddr)
+{
+    if (app_sockaddr->sa_family == __WASI_AF_INET) {
+        struct sockaddr_in* host_v4addr = (struct sockaddr_in*)host_sockaddr;
+        __wasi_sockaddr_in_app_t * app_v4addr = (__wasi_sockaddr_in_app_t *)app_sockaddr;
+        memset(host_v4addr, 0, sizeof(*host_v4addr));
+        host_v4addr->sin_family = AF_INET;
+        host_v4addr->sin_port = app_v4addr->sin_port;
+        host_v4addr->sin_addr.s_addr = app_v4addr->sin_addr._s_addr;
+    } else if (app_sockaddr->sa_family == __WASI_AF_INET6) {
+        struct sockaddr_in6* host_v6addr = (struct sockaddr_in6*)host_sockaddr;
+        __wasi_sockaddr_in6_app_t * app_v6addr = (__wasi_sockaddr_in6_app_t *)app_sockaddr;
+        memset(host_v6addr, 0, sizeof(*host_v6addr));
+        host_v6addr->sin6_family = AF_INET6;
+        host_v6addr->sin6_port = app_v6addr->sin6_port;
+        host_v6addr->sin6_flowinfo = app_v6addr->sin6_flowinfo;
+        host_v6addr->sin6_scope_id = app_v6addr->sin6_scope_id;
+        memcpy(host_v6addr->sin6_addr.s6_addr, app_v6addr->sin6_addr._s6_addr, 16);
+    } else {
+        return __WASI_EAFNOSUPPORT;
+    }
+    return 0;
+}
+
 
 __wasi_errno_t
 wasmtime_ssp_clock_res_get(__wasi_clockid_t clock_id,
@@ -2942,4 +2997,71 @@ fd_prestats_destroy(struct fd_prestats *pt)
         rwlock_destroy(&pt->lock);
         wasm_runtime_free(pt->prestats);
     }
+}
+
+__wasi_errno_t
+wasmtime_ssp_sock_getifaddrs(__wamr_ifaddr_t *app_ifaddrs, uint32_t *addr_count)
+{
+    if (!addr_count || !app_ifaddrs)
+        return __WASI_EINVAL;
+    struct ifaddrs *ifap = NULL;
+    if (getifaddrs(&ifap) != 0)
+        return convert_errno(errno);
+    uint32_t ori_addr_count = *addr_count;
+    uint32_t new_addr_count = 0;
+    for (struct ifaddrs *ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6)
+            new_addr_count++;
+    }
+    *addr_count = new_addr_count;
+    if (ori_addr_count < new_addr_count) {
+        freeifaddrs(ifap);
+        return __WASI_ENOBUFS;
+    }
+    uint32_t cur_addr_idx = 0;
+    for (struct ifaddrs *ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr)
+            continue;
+        if (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) {
+            __wamr_ifaddr_t *app_ifaddr = &app_ifaddrs[cur_addr_idx++];
+            memset(app_ifaddr, 0, sizeof(*app_ifaddr));
+            strncpy(app_ifaddr->ifa_name, ifa->ifa_name, sizeof(app_ifaddr->ifa_name) - 1);
+            app_ifaddr->ifa_flags = ifa->ifa_flags;
+            host_sockaddr_to_wasi_sockaddr(ifa->ifa_addr, (__wasi_sockaddr_t *)&app_ifaddr->ifa_addr);
+            host_sockaddr_to_wasi_sockaddr(ifa->ifa_netmask, (__wasi_sockaddr_t *)&app_ifaddr->ifa_netmask);
+            host_sockaddr_to_wasi_sockaddr(ifa->ifa_broadaddr, (__wasi_sockaddr_t *)&app_ifaddr->ifa_ifu.ifu_broadaddr);
+        }
+    }
+#ifdef __linux__
+    // Get index and MAC address for all interfaces
+    for (struct ifaddrs *ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_PACKET) {
+            struct sockaddr_ll *lladdr = (struct sockaddr_ll*)ifa->ifa_addr;
+            for (uint32_t i = 0; i < new_addr_count; i++) {
+                if (strcmp(ifa->ifa_name, app_ifaddrs[i].ifa_name) == 0) {
+                    memcpy(app_ifaddrs[i].ifa_hwaddr, lladdr->sll_addr, 6);
+                    app_ifaddrs[i].ifa_ifindex = lladdr->sll_ifindex;
+                }
+            }
+        }
+    }
+#else
+    // Get index for all interfaces
+    struct if_nameindex *nameindex = if_nameindex();
+    if (nameindex) {
+        struct if_nameindex *pni = nameindex;
+        while (1) {
+            if (pni->if_index == 0 || !pni->if_name)
+                break;
+            for (uint32_t i = 0; i < new_addr_count; i++) {
+                if (strcmp(pni->if_name, app_ifaddrs[i].ifa_name) == 0)
+                    app_ifaddrs[i].ifa_ifindex = pni->if_index;
+            }
+            pni++;
+        }
+        if_freenameindex(nameindex);
+    }
+#endif
+    freeifaddrs(ifap);
+    return 0;
 }

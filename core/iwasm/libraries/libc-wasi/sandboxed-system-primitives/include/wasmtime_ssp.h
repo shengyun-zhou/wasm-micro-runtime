@@ -536,6 +536,57 @@ _Static_assert(_Alignof(__wasi_subscription_t) == 8, "witx calculated align");
 _Static_assert(offsetof(__wasi_subscription_t, userdata) == 0, "witx calculated offset");
 _Static_assert(offsetof(__wasi_subscription_t, u) == 8, "witx calculated offset");
 
+
+typedef unsigned short __wasi_sa_family_app_t;
+
+#define __WASI_AF_INET 1
+#define __WASI_AF_INET6 2
+
+typedef struct __wasi_sockaddr_t {
+    _Alignas(16) __wasi_sa_family_app_t sa_family;
+    char sa_data[0];
+} __wasi_sockaddr_t;
+
+struct __wasi_in_addr_t {
+    uint32_t _s_addr;
+};
+
+typedef struct __wasi_sockaddr_in_t {
+    _Alignas(16) __wasi_sa_family_app_t sin_family;
+    uint16_t sin_port;
+    struct __wasi_in_addr_t sin_addr;
+} __wasi_sockaddr_in_app_t;
+
+struct __wasi_in6_addr_t {
+    _Alignas(int32_t) unsigned char _s6_addr[16];
+};
+
+typedef struct __wasi_sockaddr_in6_app {
+    _Alignas(16) __wasi_sa_family_app_t sin6_family;
+    uint16_t sin6_port;
+    unsigned sin6_flowinfo;
+    struct __wasi_in6_addr_t sin6_addr;
+    unsigned sin6_scope_id;
+} __wasi_sockaddr_in6_app_t;
+
+typedef struct __wasi_sockaddr_storage_t {
+    _Alignas(16) __wasi_sa_family_app_t ss_family;
+    char __ss_data[32];
+} __wasi_sockaddr_storage_t;
+
+typedef struct __wamr_ifaddr_t {
+    char ifa_name[32];
+    unsigned int ifa_ifindex;
+    unsigned int ifa_flags;
+    struct __wasi_sockaddr_storage_t ifa_addr;
+    struct __wasi_sockaddr_storage_t ifa_netmask;
+    union {
+        struct __wasi_sockaddr_storage_t ifu_broadaddr;
+        struct __wasi_sockaddr_storage_t ifu_dstaddr;
+    } ifa_ifu;
+    unsigned char ifa_hwaddr[6];
+} __wamr_ifaddr_t;
+
 #if defined(WASMTIME_SSP_WASI_API)
 #define WASMTIME_SSP_SYSCALL_NAME(name) \
     asm("__wasi_" #name)
@@ -953,6 +1004,9 @@ __wasi_errno_t wasmtime_ssp_sock_shutdown(
 
 __wasi_errno_t wasmtime_ssp_sched_yield(void)
     WASMTIME_SSP_SYSCALL_NAME(sched_yield) __attribute__((__warn_unused_result__));
+
+__wasi_errno_t wasmtime_ssp_sock_getifaddrs(__wamr_ifaddr_t * app_ifaddrs, uint32_t* addr_count)
+    WASMTIME_SSP_SYSCALL_NAME(sock_getifaddrs) __attribute__((__warn_unused_result__));
 
 #ifdef __cplusplus
 }

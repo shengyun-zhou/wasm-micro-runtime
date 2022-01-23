@@ -1114,6 +1114,12 @@ wasi_sched_yield(wasm_exec_env_t exec_env)
     return wasmtime_ssp_sched_yield();
 }
 
+static wasi_errno_t
+wasi_sock_getifaddrs(wasm_exec_env_t exec_env, __wamr_ifaddr_t * ifaddrs, uint32_t* addr_count)
+{
+    return wasmtime_ssp_sock_getifaddrs(ifaddrs, addr_count);
+}
+
 /* clang-format off */
 #define REG_NATIVE_FUNC(func_name, signature) \
     { #func_name, wasi_##func_name, signature, NULL }
@@ -1165,6 +1171,7 @@ static NativeSymbol native_symbols_libc_wasi[] = {
     REG_NATIVE_FUNC(sock_send, "(i*ii*)i"),
     REG_NATIVE_FUNC(sock_shutdown, "(ii)i"),
     REG_NATIVE_FUNC(sched_yield, "()i"),
+    REG_NATIVE_FUNC(sock_getifaddrs, "(**)i"),
 };
 
 uint32
