@@ -853,6 +853,19 @@ wasi_fd_filestat_set_size(wasm_exec_env_t exec_env, wasi_fd_t fd,
 }
 
 static wasi_errno_t
+wasi_fd_statvfs(wasm_exec_env_t exec_env, wasi_fd_t fd, __wamr_statvfs_t *vfs_stat)
+{
+    wasm_module_inst_t module_inst = get_module_inst(exec_env);
+    wasi_ctx_t wasi_ctx = get_wasi_ctx(module_inst);
+    if (!validate_native_addr(vfs_stat, sizeof(*vfs_stat)))
+        return (wasi_errno_t)-1;
+    struct fd_table *curfds = wasi_ctx_get_curfds(module_inst, wasi_ctx);
+    if (!wasi_ctx)
+        return (wasi_errno_t)-1;
+    return wasmtime_ssp_fd_statvfs(curfds, fd, vfs_stat);
+}
+
+static wasi_errno_t
 wasi_path_filestat_get(wasm_exec_env_t exec_env, wasi_fd_t fd,
                        wasi_lookupflags_t flags, const char *path,
                        uint32 path_len, wasi_filestat_t *filestat)
@@ -1158,6 +1171,7 @@ static NativeSymbol native_symbols_libc_wasi[] = {
     REG_NATIVE_FUNC(fd_filestat_get, "(i*)i"),
     REG_NATIVE_FUNC(fd_filestat_set_times, "(iIIi)i"),
     REG_NATIVE_FUNC(fd_filestat_set_size, "(iI)i"),
+    REG_NATIVE_FUNC(fd_statvfs, "(i*)i"),
     REG_NATIVE_FUNC(path_filestat_get, "(ii*~*)i"),
     REG_NATIVE_FUNC(path_filestat_set_times, "(ii*~IIi)i"),
     REG_NATIVE_FUNC(path_symlink, "(*~i*~)i"),

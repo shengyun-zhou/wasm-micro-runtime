@@ -23,6 +23,7 @@
 #include "str.h"
 #include <ifaddrs.h>
 #include <net/if.h>
+#include <sys/statvfs.h>
 #ifdef __linux__
 #include <netpacket/packet.h>
 #endif
@@ -1418,6 +1419,39 @@ wasmtime_ssp_fd_allocate(
     if (ret != 0)
         return convert_errno(ret);
     return 0;
+}
+
+#ifdef __linux__
+typedef struct statvfs64 host_statvfs_t;
+#define host_fstatvfs fstatvfs64
+#else
+typedef struct statvfs host_statvfs_t;
+#define host_fstatvfs fstatvfs
+#endif
+
+__wasi_errno_t
+wasmtime_ssp_fd_statvfs(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t fd,
+    __wamr_statvfs_t *vfs_stat)
+{
+    struct fd_object *fo;
+    __wasi_errno_t error = fd_object_get(curfds, &fo, fd, 0, 0);
+    if (error != 0)
+        return error;
+    host_statvfs_t host_statvfs_buf;
+    if (host_fstatvfs(fd_number(fo), &host_statvfs_buf) == 0) {
+        vfs_stat->f_bsize = host_statvfs_buf.f_frsize;
+        vfs_stat->f_blocks = host_statvfs_buf.f_blocks;
+        vfs_stat->f_bavail = host_statvfs_buf.f_bavail;
+        vfs_stat->f_bfree = host_statvfs_buf.f_bfree;
+    } else {
+        error = convert_errno(errno);
+    }
+    fd_object_release(fo);
+    return error;
 }
 
 // Reads the entire contents of a symbolic link, returning the contents

@@ -587,6 +587,13 @@ typedef struct __wamr_ifaddr_t {
     unsigned char ifa_hwaddr[6];
 } __wamr_ifaddr_t;
 
+typedef struct __wamr_statvfs_t {
+    uint32_t f_bsize;
+    uint64_t f_blocks;
+    uint64_t f_bfree;
+    uint64_t f_bavail;
+} __wamr_statvfs_t;
+
 #if defined(WASMTIME_SSP_WASI_API)
 #define WASMTIME_SSP_SYSCALL_NAME(name) \
     asm("__wasi_" #name)
@@ -887,6 +894,14 @@ __wasi_errno_t wasmtime_ssp_fd_filestat_set_size(
     __wasi_fd_t fd,
     __wasi_filesize_t st_size
 ) WASMTIME_SSP_SYSCALL_NAME(fd_filestat_set_size) __attribute__((__warn_unused_result__));
+
+__wasi_errno_t wasmtime_ssp_fd_statvfs(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t fd,
+    __wamr_statvfs_t *vfs_stat
+) WASMTIME_SSP_SYSCALL_NAME(fd_statvfs) __attribute__((__warn_unused_result__));
 
 __wasi_errno_t wasmtime_ssp_path_filestat_get(
 #if !defined(WASMTIME_SSP_STATIC_CURFDS)
