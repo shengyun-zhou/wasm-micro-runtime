@@ -465,7 +465,7 @@ allocate_handle(wasm_exec_env_t env)
 {
     uint32 id;
     os_mutex_lock(&thread_global_lock);
-    while (1) 
+    while (1)
     {
         id = handle_id++;
         if (id == 0)
@@ -746,6 +746,13 @@ pthread_self_wrapper(wasm_exec_env_t exec_env)
     return args->info_node->handle;
 }
 
+/* emcc use __pthread_self rather than pthread_self */
+static int32
+__pthread_self_wrapper(wasm_exec_env_t exec_env)
+{
+    return pthread_self_wrapper(exec_env);
+}
+
 static void
 pthread_exit_wrapper(wasm_exec_env_t exec_env, int32 retval_offset)
 {
@@ -791,7 +798,7 @@ _pthread_exit_wrapper(wasm_exec_env_t exec_env, int32 retval_offset)
 }
 
 static int32
-pthread_once_wrapper(wasm_exec_env_t exec_env, uint32 *once_ctrl, 
+pthread_once_wrapper(wasm_exec_env_t exec_env, uint32 *once_ctrl,
                      uint32 elem_index /* entry function */)
 {
     if (*once_ctrl == 0) {
@@ -1333,10 +1340,10 @@ static NativeSymbol native_symbols_lib_pthread[] = {
     REG_NATIVE_FUNC(pthread_detach, "(i)i"),
     REG_NATIVE_FUNC(pthread_cancel, "(i)i"),
     REG_NATIVE_FUNC(pthread_self, "()i"),
+    REG_NATIVE_FUNC(__pthread_self, "()i"),
     REG_NATIVE_FUNC(pthread_exit, "(i)"),
     REG_NATIVE_FUNC(_pthread_exit, "(i)"),
     REG_NATIVE_FUNC(pthread_once, "(*i)i"),
-    REG_NATIVE_FUNC(pthread_mutex_init, "(**)i"),
     REG_NATIVE_FUNC(pthread_mutex_init, "(**)i"),
     REG_NATIVE_FUNC(pthread_mutex_lock, "(*)i"),
     REG_NATIVE_FUNC(pthread_mutex_trylock, "(*)i"),

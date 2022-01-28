@@ -197,6 +197,16 @@ os_rwlock_unlock(korp_rwlock *rwlock);
 int
 os_rwlock_destroy(korp_rwlock* rwlock);
 
+/**
+ * Broadcast the condition variable
+ *
+ * @param cond condition variable
+ *
+ * @return 0 if success
+ */
+int
+os_cond_broadcast(korp_cond *cond);
+
 /****************************************************
  *                     Section 2                    *
  *                   Socket support                 *
