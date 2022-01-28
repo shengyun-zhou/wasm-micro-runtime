@@ -201,42 +201,46 @@ convert_clockid(__wasi_clockid_t in, clockid_t *out)
 }
 
 static void
-host_sockaddr_to_wasi_sockaddr(const struct sockaddr* host_sockaddr, __wasi_sockaddr_t * app_sockaddr)
+host_sockaddr_to_wasi_sockaddr(const struct sockaddr* host_sockaddr, __wasi_sockaddr_t *app_sockaddr, uint32_t *app_sockaddr_len)
 {
     if (!host_sockaddr)
         return;
     if (host_sockaddr->sa_family == AF_INET) {
         struct sockaddr_in* host_v4addr = (struct sockaddr_in*)host_sockaddr;
-        __wasi_sockaddr_in_app_t * app_v4addr = (__wasi_sockaddr_in_app_t *)app_sockaddr;
+        __wasi_sockaddr_in_t * app_v4addr = (__wasi_sockaddr_in_t *)app_sockaddr;
         memset(app_v4addr, 0, sizeof(*app_v4addr));
         app_v4addr->sin_family = __WASI_AF_INET;
         app_v4addr->sin_port = host_v4addr->sin_port;
         app_v4addr->sin_addr._s_addr = host_v4addr->sin_addr.s_addr;
+        if (app_sockaddr_len)
+            *app_sockaddr_len = sizeof(__wasi_sockaddr_in_t);
     } else if (host_sockaddr->sa_family == AF_INET6) {
-        struct sockaddr_in6* host_v6addr = (struct sockaddr_in6*)host_sockaddr;
-        __wasi_sockaddr_in6_app_t * app_v6addr = (__wasi_sockaddr_in6_app_t *)app_sockaddr;
+        struct sockaddr_in6 *host_v6addr = (struct sockaddr_in6*)host_sockaddr;
+        __wasi_sockaddr_in6_t *app_v6addr = (__wasi_sockaddr_in6_t*)app_sockaddr;
         memset(app_v6addr, 0, sizeof(*app_v6addr));
         app_v6addr->sin6_family = __WASI_AF_INET6;
         app_v6addr->sin6_port = host_v6addr->sin6_port;
         app_v6addr->sin6_flowinfo = host_v6addr->sin6_flowinfo;
         app_v6addr->sin6_scope_id = host_v6addr->sin6_scope_id;
         memcpy(app_v6addr->sin6_addr._s6_addr, host_v6addr->sin6_addr.s6_addr, 16);
+        if (app_sockaddr_len)
+            *app_sockaddr_len = sizeof(__wasi_sockaddr_in6_t);
     }
 }
 
 static __wasi_errno_t
-wasi_sockaddr_to_host_sockaddr(const __wasi_sockaddr_t * app_sockaddr, const struct sockaddr* host_sockaddr)
+wasi_sockaddr_to_host_sockaddr(const __wasi_sockaddr_t * app_sockaddr, struct sockaddr* host_sockaddr)
 {
     if (app_sockaddr->sa_family == __WASI_AF_INET) {
         struct sockaddr_in* host_v4addr = (struct sockaddr_in*)host_sockaddr;
-        __wasi_sockaddr_in_app_t * app_v4addr = (__wasi_sockaddr_in_app_t *)app_sockaddr;
+        __wasi_sockaddr_in_t *app_v4addr = (__wasi_sockaddr_in_t *)app_sockaddr;
         memset(host_v4addr, 0, sizeof(*host_v4addr));
         host_v4addr->sin_family = AF_INET;
         host_v4addr->sin_port = app_v4addr->sin_port;
         host_v4addr->sin_addr.s_addr = app_v4addr->sin_addr._s_addr;
     } else if (app_sockaddr->sa_family == __WASI_AF_INET6) {
         struct sockaddr_in6* host_v6addr = (struct sockaddr_in6*)host_sockaddr;
-        __wasi_sockaddr_in6_app_t * app_v6addr = (__wasi_sockaddr_in6_app_t *)app_sockaddr;
+        __wasi_sockaddr_in6_t * app_v6addr = (__wasi_sockaddr_in6_t *)app_sockaddr;
         memset(host_v6addr, 0, sizeof(*host_v6addr));
         host_v6addr->sin6_family = AF_INET6;
         host_v6addr->sin6_port = app_v6addr->sin6_port;
@@ -2676,6 +2680,7 @@ wasmtime_ssp_poll_oneoff(
         timeout = -1;
     }
     int ret = poll(pfds, nsubscriptions, timeout);
+    printf("poll() with timeout %d, ret=%d\n", timeout, ret);
 
     __wasi_errno_t error = 0;
     if (ret == -1) {
@@ -2805,17 +2810,194 @@ wasmtime_ssp_random_get(void *buf, size_t nbyte)
 }
 
 __wasi_errno_t
-wasmtime_ssp_sock_recv(
+wasmtime_ssp_sock_socket(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    int32_t domain, int32_t type, int32_t protocol, int32_t flags, __wasi_fd_t *out_sockfd)
+{
+    int new_sockfd = socket(domain, type, protocol);
+    if (new_sockfd == -1)
+        return convert_errno(errno);
+    if (flags & __WASI_SOCK_NONBLOCK) {
+        int temp_flags = fcntl(new_sockfd, F_GETFL, 0);
+        if (temp_flags != -1)
+            fcntl(new_sockfd, F_SETFL, temp_flags | O_NONBLOCK);
+    }
+    __wasi_filetype_t wasi_ft;
+    __wasi_rights_t wasi_rights, wasi_rights_inheriting;
+    __wasi_errno_t err = fd_determine_type_rights(new_sockfd, &wasi_ft, &wasi_rights, &wasi_rights_inheriting);
+    if (err != 0) {
+        close(new_sockfd);
+        return err;
+    }
+    return fd_table_insert_fd(curfds, new_sockfd, wasi_ft, wasi_rights,
+                              wasi_rights_inheriting, out_sockfd);
+
+}
+
+__wasi_errno_t wasmtime_ssp_sock_bind(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_sockfd, __wasi_sockaddr_t *bind_addr)
+{
+    struct sockaddr_storage host_bindaddr;
+    __wasi_errno_t error = wasi_sockaddr_to_host_sockaddr(bind_addr, (struct sockaddr*)&host_bindaddr);
+    if (error != 0)
+        return error;
+    struct fd_object *fo;
+    error = fd_object_get(curfds, &fo, app_sockfd, __WASI_RIGHT_FD_WRITE, 0);
+    if (error != 0)
+        return error;
+    int bind_ret = bind(fd_number(fo), (struct sockaddr*)&host_bindaddr,
+                        host_bindaddr.ss_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in));
+    fd_object_release(fo);
+    if (bind_ret == -1)
+        return convert_errno(errno);
+    return 0;
+}
+
+__wasi_errno_t wasmtime_ssp_sock_connect(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_sockfd,
+    __wasi_sockaddr_t *app_toaddr)
+{
+    struct fd_object *fo;
+    __wasi_errno_t error = fd_object_get(curfds, &fo, app_sockfd, __WASI_RIGHT_FD_WRITE, 0);
+    if (error != 0)
+        return error;
+    struct sockaddr_storage host_toaddr;
+    wasi_sockaddr_to_host_sockaddr(app_toaddr, (struct sockaddr*)&host_toaddr);
+    int connect_ret = connect(fd_number(fo), (struct sockaddr*)&host_toaddr,
+                              host_toaddr.ss_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in));
+    fd_object_release(fo);
+    if (connect_ret == -1)
+        return convert_errno(errno);
+    return 0;
+}
+
+__wasi_errno_t wasmtime_ssp_sock_listen(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_sockfd, int32_t backlog)
+{
+    struct fd_object *fo;
+    __wasi_errno_t error = fd_object_get(curfds, &fo, app_sockfd, __WASI_RIGHT_FD_WRITE, 0);
+    if (error != 0)
+        return error;
+    int listen_ret = listen(fd_number(fo), backlog);
+    fd_object_release(fo);
+    if (listen_ret == -1)
+        return convert_errno(errno);
+    return 0;
+}
+
+__wasi_errno_t wasmtime_ssp_sock_accept(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_sockfd, __wasi_fd_t *new_app_sockfd, __wasi_sockaddr_t *app_sockaddr, uint32_t *app_addrlen)
+{
+    struct fd_object *fo;
+    __wasi_errno_t error = fd_object_get(curfds, &fo, app_sockfd, __WASI_RIGHT_FD_READ, 0);
+    if (error != 0)
+        return error;
+    struct sockaddr_storage host_sockaddr;
+    socklen_t host_addrlen = sizeof(host_sockaddr);
+    int accept_ret = accept(fd_number(fo), (struct sockaddr*)&host_sockaddr, &host_addrlen);
+    fd_object_release(fo);
+    if (accept_ret == -1)
+        return convert_errno(errno);
+    if (app_sockaddr) {
+        struct __wasi_sockaddr_storage_t temp_app_sockaddr;
+        uint32_t new_app_addrlen = 0;
+        host_sockaddr_to_wasi_sockaddr((struct sockaddr*)&host_sockaddr, (struct __wasi_sockaddr_t*)&temp_app_sockaddr, &new_app_addrlen);
+        if (new_app_addrlen < *app_addrlen)
+            *app_addrlen = new_app_addrlen;
+        memcpy(app_sockaddr, &temp_app_sockaddr, *app_addrlen);
+    }
+    __wasi_filetype_t wasi_ft;
+    __wasi_rights_t wasi_rights, wasi_rights_inheriting;
+    __wasi_errno_t err = fd_determine_type_rights(accept_ret, &wasi_ft, &wasi_rights, &wasi_rights_inheriting);
+    if (err != 0) {
+        close(accept_ret);
+        return err;
+    }
+    return fd_table_insert_fd(curfds, accept_ret, wasi_ft, wasi_rights,
+                              wasi_rights_inheriting, new_app_sockfd);
+}
+
+__wasi_errno_t wasmtime_ssp_sock_getsockname(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_sockfd, __wasi_sockaddr_t *app_sockaddr, uint32_t *app_addrlen)
+{
+    struct fd_object *fo;
+    __wasi_errno_t error = fd_object_get(curfds, &fo, app_sockfd, __WASI_RIGHT_FD_READ, 0);
+    if (error != 0)
+        return error;
+    struct sockaddr_storage host_sockaddr;
+    socklen_t host_addrlen = sizeof(host_sockaddr);
+    int getsockname_ret = getsockname(fd_number(fo), (struct sockaddr*)&host_sockaddr, &host_addrlen);
+    fd_object_release(fo);
+    if (getsockname_ret == -1)
+        return convert_errno(errno);
+    struct __wasi_sockaddr_storage_t temp_app_sockaddr;
+    uint32_t new_app_addrlen = 0;
+    host_sockaddr_to_wasi_sockaddr((struct sockaddr*)&host_sockaddr, (struct __wasi_sockaddr_t*)&temp_app_sockaddr, &new_app_addrlen);
+    if (new_app_addrlen < *app_addrlen)
+        *app_addrlen = new_app_addrlen;
+    memcpy(app_sockaddr, &temp_app_sockaddr, *app_addrlen);
+    return 0;
+}
+
+__wasi_errno_t wasmtime_ssp_sock_getpeername(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_sockfd, __wasi_sockaddr_t *app_sockaddr, uint32_t *app_addrlen)
+{
+    struct fd_object *fo;
+    __wasi_errno_t error = fd_object_get(curfds, &fo, app_sockfd, __WASI_RIGHT_FD_READ, 0);
+    if (error != 0)
+        return error;
+    struct sockaddr_storage host_sockaddr;
+    socklen_t host_addrlen = sizeof(host_sockaddr);
+    int getpeername_ret = getpeername(fd_number(fo), (struct sockaddr*)&host_sockaddr, &host_addrlen);
+    fd_object_release(fo);
+    if (getpeername_ret == -1)
+        return convert_errno(errno);
+    struct __wasi_sockaddr_storage_t temp_app_sockaddr;
+    uint32_t new_app_addrlen = 0;
+    host_sockaddr_to_wasi_sockaddr((struct sockaddr*)&host_sockaddr, (struct __wasi_sockaddr_t*)&temp_app_sockaddr, &new_app_addrlen);
+    if (new_app_addrlen < *app_addrlen)
+        *app_addrlen = new_app_addrlen;
+    memcpy(app_sockaddr, &temp_app_sockaddr, *app_addrlen);
+    return 0;
+}
+
+__wasi_errno_t
+wasmtime_ssp_sock_recvfrom(
 #if !defined(WASMTIME_SSP_STATIC_CURFDS)
     struct fd_table *curfds,
 #endif
     __wasi_fd_t sock, const __wasi_iovec_t *ri_data, size_t ri_data_len,
-    __wasi_riflags_t ri_flags, size_t *ro_datalen, __wasi_roflags_t *ro_flags)
+    __wasi_riflags_t ri_flags,
+    __wasi_sockaddr_t *ri_recv_addr, uint32_t *ro_recv_addrlen,
+    size_t *ro_datalen, __wasi_roflags_t *ro_flags)
 {
     // Convert input to msghdr.
+    struct sockaddr_storage host_sockaddr;
     struct msghdr hdr = {
         .msg_iov = (struct iovec *)ri_data,
         .msg_iovlen = ri_data_len,
+        .msg_name = &host_sockaddr,
+        .msg_namelen = sizeof(host_sockaddr)
     };
     int nflags = 0;
     if ((ri_flags & __WASI_SOCK_RECV_PEEK) != 0)
@@ -2841,22 +3023,49 @@ wasmtime_ssp_sock_recv(
     *ro_flags = 0;
     if ((hdr.msg_flags & MSG_TRUNC) != 0)
         *ro_flags |= __WASI_SOCK_RECV_DATA_TRUNCATED;
+    if (ri_recv_addr) {
+        struct __wasi_sockaddr_storage_t temp_app_sockaddr;
+        uint32_t new_app_addrlen = 0;
+        host_sockaddr_to_wasi_sockaddr((struct sockaddr*)&host_sockaddr, (struct __wasi_sockaddr_t*)&temp_app_sockaddr, &new_app_addrlen);
+        if (new_app_addrlen < *ro_recv_addrlen)
+            *ro_recv_addrlen = new_app_addrlen;
+        memcpy(ri_recv_addr, &temp_app_sockaddr, *ro_recv_addrlen);
+    }
     return 0;
 }
 
 __wasi_errno_t
-wasmtime_ssp_sock_send(
+wasmtime_ssp_sock_recv(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t sock, const __wasi_iovec_t *ri_data, size_t ri_data_len,
+    __wasi_riflags_t ri_flags, size_t *ro_datalen, __wasi_roflags_t *ro_flags)
+{
+    return wasmtime_ssp_sock_recvfrom(curfds, sock, ri_data, ri_data_len, ri_flags, NULL, NULL, ro_datalen, ro_flags);
+}
+
+__wasi_errno_t
+wasmtime_ssp_sock_sendto(
 #if !defined(WASMTIME_SSP_STATIC_CURFDS)
     struct fd_table *curfds,
 #endif
     __wasi_fd_t sock, const __wasi_ciovec_t *si_data, size_t si_data_len,
-    __wasi_siflags_t si_flags, size_t *so_datalen) NO_LOCK_ANALYSIS
+    __wasi_siflags_t si_flags,
+    __wasi_sockaddr_t *si_to_addr,
+    size_t *so_datalen) NO_LOCK_ANALYSIS
 {
     // Convert input to msghdr.
+    struct sockaddr_storage host_to_sockaddr;
     struct msghdr hdr = {
         .msg_iov = (struct iovec *)si_data,
         .msg_iovlen = si_data_len,
     };
+    if (si_to_addr) {
+        wasi_sockaddr_to_host_sockaddr(si_to_addr, (struct sockaddr*)&host_to_sockaddr);
+        hdr.msg_name = &host_to_sockaddr;
+        hdr.msg_namelen = host_to_sockaddr.ss_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in);
+    }
 
     // Attach file descriptors if present.
     __wasi_errno_t error;
@@ -2877,6 +3086,196 @@ wasmtime_ssp_sock_send(
 
 out:
     return error;
+}
+
+__wasi_errno_t
+wasmtime_ssp_sock_send(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t sock, const __wasi_ciovec_t *si_data, size_t si_data_len,
+    __wasi_siflags_t si_flags, size_t *so_datalen)
+{
+    return wasmtime_ssp_sock_sendto(curfds, sock, si_data, si_data_len, si_flags, NULL, so_datalen);
+}
+
+__wasi_errno_t wasmtime_ssp_sock_getopt(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_sockfd, int32_t app_level, int32_t app_optname, void *app_optval, uint32_t *app_optlen)
+{
+    int32_t host_sockopt_level = 0;
+    int32_t host_sockopt_name = 0;
+    uint32_t host_sockopt_int_val = 0;
+    struct timeval host_timeval;
+    struct linger host_linger_val;
+    void* host_sockopt_val = &host_sockopt_int_val;
+    socklen_t host_sockopt_len = sizeof(host_sockopt_int_val);
+    if (app_level == __WASI_SOL_SOCKET) {
+        host_sockopt_level = SOL_SOCKET;
+        switch (app_optname) {
+            case __WASI_SO_REUSEADDR:
+                host_sockopt_name = SO_REUSEADDR;
+                break;
+            case __WASI_SO_TYPE:
+                host_sockopt_name = SO_TYPE;
+                break;
+            case __WASI_SO_ERROR:
+                host_sockopt_name = SO_ERROR;
+                break;
+            case __WASI_SO_DONTROUTE:
+                host_sockopt_name = SO_DONTROUTE;
+                break;
+            case __WASI_SO_BROADCAST:
+                host_sockopt_name = SO_BROADCAST;
+                break;
+            case __WASI_SO_SNDBUF:
+                host_sockopt_name = SO_SNDBUF;
+                break;
+            case __WASI_SO_RCVBUF:
+                host_sockopt_name = SO_RCVBUF;
+                break;
+            case __WASI_SO_KEEPALIVE:
+                host_sockopt_name = SO_KEEPALIVE;
+                break;
+            case __WASI_SO_LINGER:
+                host_sockopt_name = SO_LINGER;
+                host_sockopt_val = &host_linger_val;
+                host_sockopt_len = sizeof(host_linger_val);
+                break;
+            case __WASI_SO_RCVTIMEO:
+                host_sockopt_name = SO_RCVTIMEO;
+                host_sockopt_val = &host_timeval;
+                host_sockopt_len = sizeof(host_timeval);
+                break;
+            case __WASI_SO_SNDTIMEO:
+                host_sockopt_name = SO_SNDTIMEO;
+                host_sockopt_val = &host_timeval;
+                host_sockopt_len = sizeof(host_timeval);
+                break;
+            default:
+                return __WASI_EINVAL;
+        }
+    } else {
+        return __WASI_ENOPROTOOPT;
+    }
+    struct fd_object *fo;
+    __wasi_errno_t error = fd_object_get(curfds, &fo, app_sockfd, __WASI_RIGHT_FD_READ, 0);
+    if (error != 0)
+        return error;
+
+    int getsockopt_ret = 0;
+    if (host_sockopt_level == SOL_SOCKET && host_sockopt_name == SO_TYPE) {
+        host_sockopt_int_val = fo->type;
+    } else {
+        getsockopt_ret = getsockopt(fd_number(fo), host_sockopt_level,
+                                    host_sockopt_name, host_sockopt_val, &host_sockopt_len);
+    }
+    fd_object_release(fo);
+    if (getsockopt_ret == -1)
+        return convert_errno(errno);
+    if (host_sockopt_val == &host_timeval) {
+        __wasi_timeval_t temp_app_timeval;
+        temp_app_timeval.tv_sec = host_timeval.tv_sec;
+        temp_app_timeval.tv_usec = host_timeval.tv_usec;
+        if (*app_optlen > sizeof(temp_app_timeval))
+            *app_optlen = sizeof(temp_app_timeval);
+        memcpy(app_optval, &temp_app_timeval, *app_optlen);
+    } else if (host_sockopt_val == &host_linger_val) {
+        __wasi_linger_t temp_app_linger;
+        temp_app_linger.l_linger = host_linger_val.l_linger;
+        temp_app_linger.l_onoff = host_linger_val.l_onoff;
+        if (*app_optlen > sizeof(temp_app_linger))
+            *app_optlen = sizeof(temp_app_linger);
+        memcpy(app_optval, &temp_app_linger, *app_optlen);
+    } else {
+        if (*app_optlen > host_sockopt_len)
+            *app_optlen = host_sockopt_len;
+        memcpy(app_optval, host_sockopt_val, *app_optlen);
+    }
+    return 0;
+}
+
+__wasi_errno_t wasmtime_ssp_sock_setopt(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_sockfd, int32_t app_level, int32_t app_optname, void *app_optval, uint32_t app_optlen)
+{
+    int32_t host_sockopt_level = 0;
+    int32_t host_sockopt_name = 0;
+    struct timeval host_timeval;
+    struct linger host_linger_val;
+    void* host_sockopt_val = app_optval;
+    if (app_level == __WASI_SOL_SOCKET) {
+        host_sockopt_level = SOL_SOCKET;
+        switch (app_optname) {
+            case __WASI_SO_REUSEADDR:
+                host_sockopt_name = SO_REUSEADDR;
+                break;
+            case __WASI_SO_DONTROUTE:
+                host_sockopt_name = SO_DONTROUTE;
+                break;
+            case __WASI_SO_BROADCAST:
+                host_sockopt_name = SO_BROADCAST;
+                break;
+            case __WASI_SO_SNDBUF:
+                host_sockopt_name = SO_SNDBUF;
+                break;
+            case __WASI_SO_RCVBUF:
+                host_sockopt_name = SO_RCVBUF;
+                break;
+            case __WASI_SO_KEEPALIVE:
+                host_sockopt_name = SO_KEEPALIVE;
+                break;
+            case __WASI_SO_LINGER:
+                host_sockopt_name = SO_LINGER;
+                host_sockopt_val = &host_linger_val;
+                break;
+            case __WASI_SO_RCVTIMEO:
+                host_sockopt_name = SO_RCVTIMEO;
+                host_sockopt_val = &host_timeval;
+                break;
+            case __WASI_SO_SNDTIMEO:
+                host_sockopt_name = SO_SNDTIMEO;
+                host_sockopt_val = &host_timeval;
+                break;
+            default:
+                return __WASI_EINVAL;
+        }
+    } else {
+        return __WASI_ENOPROTOOPT;
+    }
+
+    socklen_t host_sockopt_optlen = app_optlen;
+    if (host_sockopt_val == &host_timeval) {
+        if (app_optlen < sizeof(__wasi_timeval_t))
+            return __WASI_EINVAL;
+        __wasi_timeval_t *app_timeval = (__wasi_timeval_t*)app_optval;
+        host_timeval.tv_sec = app_timeval->tv_sec;
+        host_timeval.tv_usec = app_timeval->tv_usec;
+        host_sockopt_optlen = sizeof(host_timeval);
+    } else if (host_sockopt_val == &host_linger_val) {
+        if (app_optlen < sizeof(__wasi_linger_t))
+            return __WASI_EINVAL;
+        __wasi_linger_t *app_linger = (__wasi_linger_t*)app_optval;
+        host_linger_val.l_linger = app_linger->l_linger;
+        host_linger_val.l_onoff = app_linger->l_onoff;
+        host_sockopt_optlen = sizeof(host_linger_val);
+    }
+
+    struct fd_object *fo;
+    __wasi_errno_t error = fd_object_get(curfds, &fo, app_sockfd, __WASI_RIGHT_FD_READ, 0);
+    if (error != 0)
+        return error;
+
+    int setsockopt_ret = setsockopt(fd_number(fo), host_sockopt_level,
+                                    host_sockopt_name, host_sockopt_val, host_sockopt_optlen);
+    fd_object_release(fo);
+    if (setsockopt_ret == -1)
+        return convert_errno(errno);
+    return 0;
 }
 
 __wasi_errno_t
@@ -3061,9 +3460,9 @@ wasmtime_ssp_sock_getifaddrs(__wamr_ifaddr_t *app_ifaddrs, uint32_t *addr_count)
             memset(app_ifaddr, 0, sizeof(*app_ifaddr));
             strncpy(app_ifaddr->ifa_name, ifa->ifa_name, sizeof(app_ifaddr->ifa_name) - 1);
             app_ifaddr->ifa_flags = ifa->ifa_flags;
-            host_sockaddr_to_wasi_sockaddr(ifa->ifa_addr, (__wasi_sockaddr_t *)&app_ifaddr->ifa_addr);
-            host_sockaddr_to_wasi_sockaddr(ifa->ifa_netmask, (__wasi_sockaddr_t *)&app_ifaddr->ifa_netmask);
-            host_sockaddr_to_wasi_sockaddr(ifa->ifa_broadaddr, (__wasi_sockaddr_t *)&app_ifaddr->ifa_ifu.ifu_broadaddr);
+            host_sockaddr_to_wasi_sockaddr(ifa->ifa_addr, (__wasi_sockaddr_t *)&app_ifaddr->ifa_addr, NULL);
+            host_sockaddr_to_wasi_sockaddr(ifa->ifa_netmask, (__wasi_sockaddr_t *)&app_ifaddr->ifa_netmask, NULL);
+            host_sockaddr_to_wasi_sockaddr(ifa->ifa_broadaddr, (__wasi_sockaddr_t *)&app_ifaddr->ifa_ifu.ifu_broadaddr, NULL);
         }
     }
 #ifdef __linux__

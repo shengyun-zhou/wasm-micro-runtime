@@ -1072,7 +1072,7 @@ pthread_rwlock_init_wrapper(wasm_exec_env_t exec_env, uint32* rwlock, void *attr
     korp_rwlock *prwlock;
     ThreadInfoNode *info_node;
 
-    if (!(prwlock = wasm_runtime_malloc(sizeof(korp_mutex))))
+    if (!(prwlock = wasm_runtime_malloc(sizeof(korp_rwlock))))
         return -1;
 
     if (os_rwlock_init(prwlock) != 0)
