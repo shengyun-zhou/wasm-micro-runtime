@@ -24,6 +24,7 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <sys/statvfs.h>
+#include <netinet/tcp.h>
 #ifdef __linux__
 #include <netpacket/packet.h>
 #endif
@@ -3156,6 +3157,13 @@ __wasi_errno_t wasmtime_ssp_sock_getopt(
             default:
                 return __WASI_EINVAL;
         }
+    } else if (app_level == __WASI_SOL_TCP) {
+        host_sockopt_level = SOL_TCP;
+        switch (app_optname) {
+            case __WASI_TCP_NODELAY:
+                host_sockopt_name = TCP_NODELAY;
+                break;
+        }
     } else {
         return __WASI_ENOPROTOOPT;
     }
@@ -3242,6 +3250,13 @@ __wasi_errno_t wasmtime_ssp_sock_setopt(
                 break;
             default:
                 return __WASI_EINVAL;
+        }
+    } else if (app_level == __WASI_SOL_TCP) {
+        host_sockopt_level = SOL_TCP;
+        switch (app_optname) {
+            case __WASI_TCP_NODELAY:
+                host_sockopt_name = TCP_NODELAY;
+                break;
         }
     } else {
         return __WASI_ENOPROTOOPT;

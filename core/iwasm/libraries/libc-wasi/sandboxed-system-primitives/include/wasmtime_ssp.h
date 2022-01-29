@@ -548,6 +548,7 @@ typedef unsigned short __wasi_sa_family_app_t;
 #define __WASI_SOL_SOCKET 0x7fffffff
 #define __WASI_SOL_IP 0
 #define __WASI_SOL_IPV6 41
+#define __WASI_SOL_TCP 6
 
 #define __WASI_SO_REUSEADDR    2
 #define __WASI_SO_TYPE         3
@@ -560,6 +561,8 @@ typedef unsigned short __wasi_sa_family_app_t;
 #define __WASI_SO_LINGER       13
 #define __WASI_SO_RCVTIMEO     20
 #define __WASI_SO_SNDTIMEO     21
+
+#define __WASI_TCP_NODELAY     1
 
 typedef long long __wasi_time_t;
 typedef long long __wasi_suseconds_t;
