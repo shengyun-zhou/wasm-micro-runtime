@@ -389,8 +389,8 @@ destroy_cluster_info(WASMCluster *cluster)
 {
     ClusterInfoNode *node = get_cluster_info(cluster);
     if (node) {
-        bh_hash_map_destroy(node->thread_info_map);
         destroy_thread_key_value_list(node->thread_list);
+        bh_hash_map_destroy(node->thread_info_map);
         os_mutex_destroy(&node->key_data_list_lock);
 
         /* Remove from the cluster info list */

@@ -1586,6 +1586,9 @@ wasm_deinstantiate(WASMModuleInstance *module_inst, bool is_sub_inst)
     sub_module_deinstantiate(module_inst);
 #endif
 
+    if (module_inst->exec_env_singleton)
+        wasm_exec_env_destroy(module_inst->exec_env_singleton);
+
 #if WASM_ENABLE_LIBC_WASI != 0
     /* Destroy wasi resource before freeing app heap, since some fields of
        wasi contex are allocated from app heap, and if app heap is freed,
@@ -1615,9 +1618,6 @@ wasm_deinstantiate(WASMModuleInstance *module_inst, bool is_sub_inst)
 #if WASM_ENABLE_REF_TYPES != 0
     wasm_externref_cleanup((WASMModuleInstanceCommon *)module_inst);
 #endif
-
-    if (module_inst->exec_env_singleton)
-        wasm_exec_env_destroy(module_inst->exec_env_singleton);
 
 #if WASM_ENABLE_DUMP_CALL_STACK != 0
     if (module_inst->frames) {
