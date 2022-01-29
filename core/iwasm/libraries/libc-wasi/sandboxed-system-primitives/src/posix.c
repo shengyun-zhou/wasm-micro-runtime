@@ -2680,7 +2680,6 @@ wasmtime_ssp_poll_oneoff(
         timeout = -1;
     }
     int ret = poll(pfds, nsubscriptions, timeout);
-    printf("poll() with timeout %d, ret=%d\n", timeout, ret);
 
     __wasi_errno_t error = 0;
     if (ret == -1) {

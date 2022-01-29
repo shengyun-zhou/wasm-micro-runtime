@@ -1100,6 +1100,8 @@ wasi_sock_accept(wasm_exec_env_t exec_env, wasi_fd_t sockfd, wasi_fd_t* out_news
                  __wasi_sockaddr_t* app_sockaddr, uint32 *app_addrlen)
 {
     wasm_module_inst_t module_inst = get_module_inst(exec_env);
+    if (app_addrlen && *app_addrlen == 0)
+        app_sockaddr = NULL;
     if (app_sockaddr) {
         if (!app_addrlen || !validate_native_addr(app_sockaddr, *app_addrlen))
             return (wasi_errno_t)-1;
@@ -1140,6 +1142,8 @@ wasi_sock_recvfrom(wasm_exec_env_t exec_env, wasi_fd_t sock, iovec_app_t *ri_dat
                    uint32 *ro_datalen_app, wasi_roflags_t *ro_flags)
 {
     wasm_module_inst_t module_inst = get_module_inst(exec_env);
+    if (recv_addrlen && *recv_addrlen == 0)
+        recv_addr = NULL;
     if (recv_addr) {
         if (!recv_addrlen || !validate_native_addr(recv_addr, *recv_addrlen))
             return (wasi_errno_t)-1;
