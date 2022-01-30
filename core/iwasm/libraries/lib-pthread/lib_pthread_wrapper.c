@@ -142,7 +142,6 @@ static bh_list cluster_info_list;
 static korp_mutex thread_global_lock;
 static korp_mutex wasm_pthread_mutex_var_init_lock;
 static korp_mutex wasm_pthread_cond_var_init_lock;
-static korp_mutex wasm_pthread_once_lock;
 static korp_mutex wasm_pthread_rwlock_init_lock;
 static uint32 handle_id = 1;
 
@@ -191,7 +190,7 @@ bool
 lib_pthread_init()
 {
     if (0 != os_mutex_init(&thread_global_lock) || 0 != os_mutex_init(&wasm_pthread_mutex_var_init_lock) || 0 != os_mutex_init(&wasm_pthread_cond_var_init_lock) ||
-        0 != os_recursive_mutex_init(&wasm_pthread_once_lock) || 0 != os_mutex_init(&wasm_pthread_rwlock_init_lock))
+        0 != os_mutex_init(&wasm_pthread_rwlock_init_lock))
         return false;
     bh_list_init(&cluster_info_list);
     if (!wasm_cluster_register_destroy_callback(lib_pthread_destroy_callback)) {
@@ -806,21 +805,6 @@ _pthread_exit_wrapper(wasm_exec_env_t exec_env, int32 retval_offset)
 }
 
 static int32
-pthread_once_wrapper(wasm_exec_env_t exec_env, uint32 *once_ctrl,
-                     uint32 elem_index /* entry function */)
-{
-    if (*once_ctrl == 0) {
-        os_mutex_lock(&wasm_pthread_once_lock);
-        if (*once_ctrl == 0) {
-            wasm_runtime_call_indirect(exec_env, elem_index, 0, NULL);
-            *once_ctrl = 1;
-        }
-        os_mutex_unlock(&wasm_pthread_once_lock);
-    }
-    return 0;
-}
-
-static int32
 pthread_mutex_init_wrapper(wasm_exec_env_t exec_env, uint32 *mutex, void *attr)
 {
     korp_mutex *pmutex;
@@ -1354,7 +1338,6 @@ static NativeSymbol native_symbols_lib_pthread[] = {
     REG_NATIVE_FUNC(__pthread_self, "()i"),
     REG_NATIVE_FUNC(pthread_exit, "(i)"),
     REG_NATIVE_FUNC(_pthread_exit, "(i)"),
-    REG_NATIVE_FUNC(pthread_once, "(*i)i"),
     REG_NATIVE_FUNC(pthread_mutex_init, "(**)i"),
     REG_NATIVE_FUNC(pthread_mutex_lock, "(*)i"),
     REG_NATIVE_FUNC(pthread_mutex_trylock, "(*)i"),
