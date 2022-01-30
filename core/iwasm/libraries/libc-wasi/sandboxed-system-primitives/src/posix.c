@@ -3459,6 +3459,8 @@ wasmtime_ssp_sock_getifaddrs(__wamr_ifaddr_t *app_ifaddrs, uint32_t *addr_count)
     uint32_t ori_addr_count = *addr_count;
     uint32_t new_addr_count = 0;
     for (struct ifaddrs *ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr)
+            continue;
         if (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6)
             new_addr_count++;
     }
