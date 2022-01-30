@@ -921,6 +921,8 @@ pthread_mutex_unlock_wrapper(wasm_exec_env_t exec_env, uint32 *mutex)
 static int32
 pthread_mutex_destroy_wrapper(wasm_exec_env_t exec_env, uint32 *mutex)
 {
+    if (*mutex == 0)
+        return 0;
     int32 ret_val;
     ThreadInfoNode *info_node = get_thread_info(exec_env, *mutex);
     if (!info_node || info_node->type != T_MUTEX)
@@ -1066,6 +1068,8 @@ pthread_cond_broadcast_wrapper(wasm_exec_env_t exec_env, uint32 *cond)
 static int32
 pthread_cond_destroy_wrapper(wasm_exec_env_t exec_env, uint32 *cond)
 {
+    if (*cond == 0)
+        return 0;
     int32 ret_val;
     ThreadInfoNode *info_node = get_thread_info(exec_env, *cond);
     if (!info_node || info_node->type != T_COND)
@@ -1197,6 +1201,8 @@ pthread_rwlock_unlock_wrapper(wasm_exec_env_t exec_env, uint32 *rwlock)
 static int32
 pthread_rwlock_destroy_wrapper(wasm_exec_env_t exec_env, uint32 *rwlock)
 {
+    if (*rwlock == 0)
+        return 0;
     ThreadInfoNode *rwlock_info_node;
     rwlock_info_node = get_thread_info(exec_env, *rwlock);
     if (!rwlock_info_node || rwlock_info_node->type != T_RWLOCK)
