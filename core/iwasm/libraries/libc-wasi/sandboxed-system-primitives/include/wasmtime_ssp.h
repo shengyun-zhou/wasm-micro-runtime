@@ -629,6 +629,24 @@ typedef struct __wamr_statvfs_t {
     uint64_t f_bavail;
 } __wamr_statvfs_t;
 
+typedef long long __wasi_off_t;
+
+#define __WASI_F_RDLCK 0
+#define __WASI_F_WRLCK 1
+#define __WASI_F_UNLCK 2
+
+#define __WASI_F_GETLK 12
+#define __WASI_F_SETLK 13
+#define __WASI_F_SETLKW 14
+
+typedef struct __wasi_flock_t {
+	short l_type;
+	short l_whence;
+	__wasi_off_t l_start;
+	__wasi_off_t l_len;
+	int l_pid;
+} __wasi_flock_t;
+
 #if defined(WASMTIME_SSP_WASI_API)
 #define WASMTIME_SSP_SYSCALL_NAME(name) \
     asm("__wasi_" #name)
@@ -1168,6 +1186,15 @@ __wasi_errno_t wasmtime_ssp_sched_yield(void)
 
 __wasi_errno_t wasmtime_ssp_sock_getifaddrs(__wamr_ifaddr_t * app_ifaddrs, uint32_t* addr_count)
     WASMTIME_SSP_SYSCALL_NAME(sock_getifaddrs) __attribute__((__warn_unused_result__));
+
+__wasi_errno_t wasmtime_ssp_fd_fcntl_flock(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_fd,
+    int32_t app_cmd,
+    __wasi_flock_t* app_flock
+) WASMTIME_SSP_SYSCALL_NAME(fd_fcntl_flock) __attribute__((__warn_unused_result__));;
 
 #ifdef __cplusplus
 }

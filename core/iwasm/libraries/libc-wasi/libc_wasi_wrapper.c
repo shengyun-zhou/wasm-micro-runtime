@@ -1321,13 +1321,24 @@ wasi_sched_yield(wasm_exec_env_t exec_env)
 }
 
 static wasi_errno_t
-wasi_sock_getifaddrs(wasm_exec_env_t exec_env, __wamr_ifaddr_t *ifaddrs, uint32_t* addr_count)
+wasi_sock_getifaddrs(wasm_exec_env_t exec_env, __wamr_ifaddr_t *ifaddrs, uint32* addr_count)
 {
     wasm_module_inst_t module_inst = get_module_inst(exec_env);
     uint32_t total_size = sizeof(*ifaddrs) * (*addr_count);
     if (total_size >= UINT32_MAX || !validate_native_addr(ifaddrs, total_size))
         return (wasi_errno_t)-1;
     return wasmtime_ssp_sock_getifaddrs(ifaddrs, addr_count);
+}
+
+static wasi_errno_t
+wasi_fd_fcntl_flock(wasm_exec_env_t exec_env, wasi_fd_t fd, int32 cmd, __wasi_flock_t* app_flock_buf)
+{
+    wasm_module_inst_t module_inst = get_module_inst(exec_env);
+    if (!validate_native_addr(app_flock_buf, sizeof(*app_flock_buf)))
+        return (wasi_errno_t)-1;
+    wasi_ctx_t wasi_ctx = get_wasi_ctx(module_inst);
+    struct fd_table *curfds = wasi_ctx_get_curfds(module_inst, wasi_ctx);
+    return wasmtime_ssp_fd_fcntl_flock(curfds, fd, cmd, app_flock_buf);
 }
 
 /* clang-format off */
@@ -1394,6 +1405,7 @@ static NativeSymbol native_symbols_libc_wasi[] = {
     REG_NATIVE_FUNC(sock_setopt, "(iii*i)i"),
     REG_NATIVE_FUNC(sock_getifaddrs, "(**)i"),
     REG_NATIVE_FUNC(sched_yield, "()i"),
+    REG_NATIVE_FUNC(fd_fcntl_flock, "(ii*)i"),
 };
 
 uint32

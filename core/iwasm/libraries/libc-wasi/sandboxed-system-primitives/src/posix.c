@@ -3514,3 +3514,77 @@ wasmtime_ssp_sock_getifaddrs(__wamr_ifaddr_t *app_ifaddrs, uint32_t *addr_count)
     freeifaddrs(ifap);
     return 0;
 }
+
+#ifdef __linux__
+typedef struct flock64 host_flock_t;
+#define HOST_F_SETLK  F_SETLK64
+#define HOST_F_SETLKW F_SETLKW64
+#define HOST_F_GETLK  F_GETLK64
+#else
+typedef struct flock host_flock_t;
+#define HOST_F_SETLK  F_SETLK
+#define HOST_F_SETLKW F_SETLKW
+#define HOST_F_GETLK  F_GETLK
+#endif
+
+__wasi_errno_t wasmtime_ssp_fd_fcntl_flock(
+#if !defined(WASMTIME_SSP_STATIC_CURFDS)
+    struct fd_table *curfds,
+#endif
+    __wasi_fd_t app_fd, int32_t app_cmd, __wasi_flock_t* app_flock)
+{
+    host_flock_t host_flock;
+    memset(&host_flock, 0, sizeof(host_flock));
+    host_flock.l_start = app_flock->l_start;
+    host_flock.l_len = app_flock->l_len;
+    switch (app_flock->l_type) {
+        case __WASI_F_RDLCK:
+            host_flock.l_type = F_RDLCK;
+            break;
+        case __WASI_F_WRLCK:
+            host_flock.l_type = F_WRLCK;
+            break;
+        case __WASI_F_UNLCK:
+            host_flock.l_type = F_UNLCK;
+            break;
+        default:
+            return __WASI_EINVAL;
+    }
+    switch (app_flock->l_whence) {
+        case __WASI_WHENCE_SET:
+            host_flock.l_whence = SEEK_SET;
+            break;
+        case __WASI_WHENCE_CUR:
+            host_flock.l_whence = SEEK_CUR;
+            break;
+        case __WASI_WHENCE_END:
+            host_flock.l_whence = SEEK_END;
+            break;
+        default:
+            return __WASI_EINVAL;
+    }
+    int host_cmd;
+    switch (app_cmd) {
+        case __WASI_F_GETLK:
+            host_cmd = HOST_F_GETLK;
+            break;
+        case __WASI_F_SETLK:
+            host_cmd = HOST_F_SETLK;
+            break;
+        case __WASI_F_SETLKW:
+            host_cmd = HOST_F_SETLKW;
+            break;
+        default:
+            return __WASI_EINVAL;
+    }
+    struct fd_object *fo;
+    __wasi_errno_t error = fd_object_get(curfds, &fo, app_fd, 0, 0);
+    if (error != 0)
+        return error;
+    int ret = fcntl(fd_number(fo), host_cmd, &host_flock);
+    fd_object_release(fo);
+    app_flock->l_pid = host_flock.l_pid;
+    if (ret == -1)
+        return convert_errno(errno);
+    return 0;
+}
