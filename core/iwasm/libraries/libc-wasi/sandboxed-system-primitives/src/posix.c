@@ -3062,7 +3062,9 @@ wasmtime_ssp_sock_sendto(
         .msg_iovlen = si_data_len,
     };
     if (si_to_addr) {
-        wasi_sockaddr_to_host_sockaddr(si_to_addr, (struct sockaddr*)&host_to_sockaddr);
+        __wasi_errno_t err = wasi_sockaddr_to_host_sockaddr(si_to_addr, (struct sockaddr*)&host_to_sockaddr);
+        if (err != 0)
+            return err;
         hdr.msg_name = &host_to_sockaddr;
         hdr.msg_namelen = host_to_sockaddr.ss_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in);
     }
