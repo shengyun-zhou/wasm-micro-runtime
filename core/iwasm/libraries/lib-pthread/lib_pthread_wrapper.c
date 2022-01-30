@@ -107,8 +107,6 @@ typedef struct ClusterInfoNode {
 } ClusterInfoNode;
 
 typedef struct ThreadInfoNode {
-    wasm_exec_env_t parent_exec_env;
-    wasm_exec_env_t exec_env;
     /* the id returned to app */
     uint32 handle;
     /* type can be [THREAD | MUTEX | CONDITION] */
@@ -116,14 +114,18 @@ typedef struct ThreadInfoNode {
     /* Thread status, this variable should be volatile
        as its value may be changed in different threads */
     volatile uint32 status;
-    bool joinable;
     union {
-        korp_tid thread;
+        struct {
+            wasm_exec_env_t parent_exec_env;
+            wasm_exec_env_t exec_env;
+            korp_tid thread;
+            bool joinable;
+            /* A copy of the thread return value */
+            void *ret;
+        } thread_info;
         korp_mutex *mutex;
         korp_cond *cond;
         korp_rwlock *rwlock;
-        /* A copy of the thread return value */
-        void *ret;
     } u;
 } ThreadInfoNode;
 
@@ -175,6 +177,12 @@ thread_info_destroy(void *node)
             os_cond_destroy(info_node->u.cond);
         wasm_runtime_free(info_node->u.cond);
     }
+    else if (info_node->type == T_RWLOCK) {
+        if (info_node->status != RWLOCK_DESTROYED)
+            os_rwlock_destroy(info_node->u.rwlock);
+        wasm_runtime_free(info_node->u.rwlock);
+    }
+    memset(info_node, 0, sizeof(*info_node));
     wasm_runtime_free(info_node);
     os_mutex_unlock(&thread_global_lock);
 }
@@ -410,11 +418,11 @@ lib_pthread_destroy_callback(WASMCluster *cluster)
 }
 
 static void
-delete_thread_info_node(ThreadInfoNode *thread_info)
+delete_thread_info_node(wasm_exec_env_t exec_env, ThreadInfoNode *thread_info)
 {
     ClusterInfoNode *node;
     bool ret;
-    WASMCluster *cluster = wasm_exec_env_get_cluster(thread_info->exec_env);
+    WASMCluster *cluster = wasm_exec_env_get_cluster(exec_env);
 
     if ((node = get_cluster_info(cluster))) {
         ret = bh_hash_map_remove(node->thread_info_map,
@@ -427,10 +435,10 @@ delete_thread_info_node(ThreadInfoNode *thread_info)
 }
 
 static bool
-append_thread_info_node(ThreadInfoNode *thread_info)
+append_thread_info_node(wasm_exec_env_t exec_env, ThreadInfoNode *thread_info)
 {
     ClusterInfoNode *node;
-    WASMCluster *cluster = wasm_exec_env_get_cluster(thread_info->exec_env);
+    WASMCluster *cluster = wasm_exec_env_get_cluster(exec_env);
 
     if (!(node = get_cluster_info(cluster))) {
         if (!(node = create_cluster_info(cluster))) {
@@ -492,13 +500,13 @@ pthread_start_routine(void *arg)
     ThreadInfoNode *info_node = routine_args->info_node;
     uint32 argv[1];
 
-    parent_exec_env = info_node->parent_exec_env;
+    parent_exec_env = info_node->u.thread_info.parent_exec_env;
     os_mutex_lock(&parent_exec_env->wait_lock);
-    info_node->exec_env = exec_env;
-    info_node->u.thread = exec_env->handle;
-    if (!append_thread_info_node(info_node)) {
+    info_node->u.thread_info.exec_env = exec_env;
+    info_node->u.thread_info.thread = exec_env->handle;
+    if (!append_thread_info_node(exec_env, info_node)) {
         wasm_runtime_deinstantiate_internal(module_inst, true);
-        delete_thread_info_node(info_node);
+        delete_thread_info_node(exec_env, info_node);
         os_cond_signal(&parent_exec_env->wait_cond);
         os_mutex_unlock(&parent_exec_env->wait_lock);
         return NULL;
@@ -528,16 +536,16 @@ pthread_start_routine(void *arg)
     /* if the thread is joinable, store the result in its info node,
        if the other threads join this thread after exited, then we
        can return the stored result */
-    if (!info_node->joinable) {
-        delete_thread_info_node(info_node);
+    if (!info_node->u.thread_info.joinable) {
+        delete_thread_info_node(exec_env, info_node);
     }
     else {
-        info_node->u.ret = (void *)(uintptr_t)argv[0];
+        info_node->u.thread_info.ret = (void *)(uintptr_t)argv[0];
 #ifdef OS_ENABLE_HW_BOUND_CHECK
         if (exec_env->suspend_flags.flags & 0x08)
             /* argv[0] isn't set after longjmp(1) to
                invoke_native_with_hw_bound_check */
-            info_node->u.ret = exec_env->thread_ret_value;
+            info_node->u.thread_info.ret = exec_env->thread_ret_value;
 #endif
         /* Update node status after ret value was set */
         info_node->status = THREAD_EXIT;
@@ -601,11 +609,11 @@ pthread_create_wrapper(wasm_exec_env_t exec_env,
 
     memset(info_node, 0, sizeof(ThreadInfoNode));
     thread_handle = allocate_handle(exec_env);
-    info_node->parent_exec_env = exec_env;
+    info_node->u.thread_info.parent_exec_env = exec_env;
     info_node->handle = thread_handle;
     info_node->type = T_THREAD;
     info_node->status = THREAD_INIT;
-    info_node->joinable = true;
+    info_node->u.thread_info.joinable = true;
 
     if (!(routine_args = wasm_runtime_malloc(sizeof(ThreadRoutineArgs))))
         goto fail;
@@ -674,7 +682,7 @@ pthread_join_wrapper(wasm_exec_env_t exec_env, uint32 thread,
         return 0;
     }
 
-    target_exec_env = node->exec_env;
+    target_exec_env = node->u.thread_info.exec_env;
     bh_assert(target_exec_env);
 
     if (node->status != THREAD_EXIT) {
@@ -686,9 +694,9 @@ pthread_join_wrapper(wasm_exec_env_t exec_env, uint32 thread,
 
         /* this thread must be joinable, otherwise the
            info_node should be destroyed once exit */
-        bh_assert(node->joinable);
+        bh_assert(node->u.thread_info.joinable);
         join_ret = 0;
-        ret = node->u.ret;
+        ret = node->u.thread_info.ret;
     }
 
     if (retval_offset != 0)
@@ -707,9 +715,9 @@ pthread_detach_wrapper(wasm_exec_env_t exec_env, uint32 thread)
     if (!node)
         return 0;
 
-    node->joinable = false;
+    node->u.thread_info.joinable = false;
 
-    target_exec_env = node->exec_env;
+    target_exec_env = node->u.thread_info.exec_env;
     bh_assert(target_exec_env != NULL);
 
     return wasm_cluster_detach_thread(target_exec_env);
@@ -726,9 +734,9 @@ pthread_cancel_wrapper(wasm_exec_env_t exec_env, uint32 thread)
         return 0;
 
     node->status = THREAD_CANCELLED;
-    node->joinable = false;
+    node->u.thread_info.joinable = false;
 
-    target_exec_env = node->exec_env;
+    target_exec_env = node->u.thread_info.exec_env;
     bh_assert(target_exec_env != NULL);
 
     return wasm_cluster_cancel_thread(target_exec_env);
@@ -777,11 +785,11 @@ pthread_exit_wrapper(wasm_exec_env_t exec_env, int32 retval_offset)
     /* routine exit, destroy instance */
     wasm_runtime_deinstantiate_internal(module_inst, true);
 
-    if (!args->info_node->joinable) {
-        delete_thread_info_node(args->info_node);
+    if (!args->info_node->u.thread_info.joinable) {
+        delete_thread_info_node(exec_env, args->info_node);
     }
     else {
-        args->info_node->u.ret = (void *)(uintptr_t)retval_offset;
+        args->info_node->u.thread_info.ret = (void *)(uintptr_t)retval_offset;
         /* Update node status after ret value was set */
         args->info_node->status = THREAD_EXIT;
     }
@@ -838,13 +846,12 @@ pthread_mutex_init_wrapper(wasm_exec_env_t exec_env, uint32 *mutex, void *attr)
         goto fail2;
 
     memset(info_node, 0, sizeof(ThreadInfoNode));
-    info_node->exec_env = exec_env;
     info_node->handle = allocate_handle(exec_env);
     info_node->type = T_MUTEX;
     info_node->u.mutex = pmutex;
     info_node->status = MUTEX_CREATED;
 
-    if (!append_thread_info_node(info_node))
+    if (!append_thread_info_node(exec_env, info_node))
         goto fail3;
 
     /* Return the mutex handle to app */
@@ -854,7 +861,7 @@ pthread_mutex_init_wrapper(wasm_exec_env_t exec_env, uint32 *mutex, void *attr)
     return 0;
 
 fail3:
-    delete_thread_info_node(info_node);
+    delete_thread_info_node(exec_env, info_node);
 fail2:
     os_mutex_destroy(pmutex);
 fail1:
@@ -922,7 +929,7 @@ pthread_mutex_destroy_wrapper(wasm_exec_env_t exec_env, uint32 *mutex)
     ret_val = os_mutex_destroy(info_node->u.mutex);
 
     info_node->status = MUTEX_DESTROYED;
-    delete_thread_info_node(info_node);
+    delete_thread_info_node(exec_env, info_node);
 
     return ret_val;
 }
@@ -945,13 +952,12 @@ pthread_cond_init_wrapper(wasm_exec_env_t exec_env, uint32 *cond, void *attr)
         goto fail2;
 
     memset(info_node, 0, sizeof(ThreadInfoNode));
-    info_node->exec_env = exec_env;
     info_node->handle = allocate_handle(exec_env);
     info_node->type = T_COND;
     info_node->u.cond = pcond;
     info_node->status = COND_CREATED;
 
-    if (!append_thread_info_node(info_node))
+    if (!append_thread_info_node(exec_env, info_node))
         goto fail3;
 
     /* Return the cond handle to app */
@@ -961,7 +967,7 @@ pthread_cond_init_wrapper(wasm_exec_env_t exec_env, uint32 *cond, void *attr)
     return 0;
 
 fail3:
-    delete_thread_info_node(info_node);
+    delete_thread_info_node(exec_env, info_node);
 fail2:
     os_cond_destroy(pcond);
 fail1:
@@ -1068,7 +1074,7 @@ pthread_cond_destroy_wrapper(wasm_exec_env_t exec_env, uint32 *cond)
     ret_val = os_cond_destroy(info_node->u.cond);
 
     info_node->status = COND_DESTROYED;
-    delete_thread_info_node(info_node);
+    delete_thread_info_node(exec_env, info_node);
 
     return ret_val;
 }
@@ -1089,13 +1095,12 @@ pthread_rwlock_init_wrapper(wasm_exec_env_t exec_env, uint32* rwlock, void *attr
         goto fail2;
 
     memset(info_node, 0, sizeof(ThreadInfoNode));
-    info_node->exec_env = exec_env;
     info_node->handle = allocate_handle(exec_env);
     info_node->type = T_RWLOCK;
     info_node->u.rwlock = prwlock;
     info_node->status = RWLOCK_CREATED;
 
-    if (!append_thread_info_node(info_node))
+    if (!append_thread_info_node(exec_env, info_node))
         goto fail3;
 
     if (rwlock)
@@ -1104,7 +1109,7 @@ pthread_rwlock_init_wrapper(wasm_exec_env_t exec_env, uint32* rwlock, void *attr
     return 0;
 
 fail3:
-    delete_thread_info_node(info_node);
+    delete_thread_info_node(exec_env, info_node);
 fail2:
     os_rwlock_destroy(prwlock);
 fail1:
@@ -1199,7 +1204,7 @@ pthread_rwlock_destroy_wrapper(wasm_exec_env_t exec_env, uint32 *rwlock)
 
     int32 ret_val = os_rwlock_destroy(rwlock_info_node->u.rwlock);
     rwlock_info_node->status = RWLOCK_DESTROYED;
-    delete_thread_info_node(rwlock_info_node);
+    delete_thread_info_node(exec_env, rwlock_info_node);
     return ret_val;
 }
 
