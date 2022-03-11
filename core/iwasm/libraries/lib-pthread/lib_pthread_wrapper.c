@@ -166,7 +166,6 @@ thread_info_destroy(void *node)
 {
     ThreadInfoNode *info_node = (ThreadInfoNode *)node;
 
-    os_mutex_lock(&thread_global_lock);
     if (info_node->type == T_MUTEX) {
         if (info_node->status != MUTEX_DESTROYED)
             os_mutex_destroy(info_node->u.mutex);
@@ -184,7 +183,6 @@ thread_info_destroy(void *node)
     }
     memset(info_node, 0, sizeof(*info_node));
     wasm_runtime_free(info_node);
-    os_mutex_unlock(&thread_global_lock);
 }
 
 bool
@@ -378,7 +376,7 @@ create_cluster_info(WASMCluster *cluster)
     node->cluster = cluster;
     os_mutex_init(&node->thread_info_lock);
     if (!(node->thread_info_map = bh_hash_map_create(
-              32, true, (HashFunc)thread_handle_hash,
+              229, true, (HashFunc)thread_handle_hash,
               (KeyEqualFunc)thread_handle_equal, NULL, thread_info_destroy))) {
         os_mutex_destroy(&node->key_data_list_lock);
         wasm_runtime_free(node);
@@ -490,7 +488,6 @@ allocate_handle(wasm_exec_env_t env)
         }
         break;
     }
-    os_mutex_unlock(&thread_global_lock);
     return id;
 }
 
