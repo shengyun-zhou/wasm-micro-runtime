@@ -97,6 +97,7 @@ typedef struct KeyData {
 typedef struct ClusterInfoNode {
     bh_list_link l;
     WASMCluster *cluster;
+    korp_mutex thread_info_lock;
     HashMap *thread_info_map;
     /* Key data list */
     KeyData key_data_list[WAMR_PTHREAD_KEYS_MAX];
@@ -139,11 +140,11 @@ typedef struct {
 } ThreadRoutineArgs;
 
 static bh_list cluster_info_list;
-static korp_mutex thread_global_lock;
 static korp_mutex wasm_pthread_mutex_var_init_lock;
 static korp_mutex wasm_pthread_cond_var_init_lock;
 static korp_mutex wasm_pthread_rwlock_init_lock;
 static uint32 handle_id = 1;
+static korp_mutex thread_global_lock;
 
 static void
 lib_pthread_destroy_callback(WASMCluster *cluster);
@@ -375,6 +376,7 @@ create_cluster_info(WASMCluster *cluster)
     }
 
     node->cluster = cluster;
+    os_mutex_init(&node->thread_info_lock);
     if (!(node->thread_info_map = bh_hash_map_create(
               32, true, (HashFunc)thread_handle_hash,
               (KeyEqualFunc)thread_handle_equal, NULL, thread_info_destroy))) {
@@ -398,6 +400,7 @@ destroy_cluster_info(WASMCluster *cluster)
     if (node) {
         destroy_thread_key_value_list(node->thread_list);
         bh_hash_map_destroy(node->thread_info_map);
+        os_mutex_destroy(&node->thread_info_lock);
         os_mutex_destroy(&node->key_data_list_lock);
 
         /* Remove from the cluster info list */
@@ -420,14 +423,13 @@ static void
 delete_thread_info_node(wasm_exec_env_t exec_env, ThreadInfoNode *thread_info)
 {
     ClusterInfoNode *node;
-    bool ret;
     WASMCluster *cluster = wasm_exec_env_get_cluster(exec_env);
 
     if ((node = get_cluster_info(cluster))) {
-        ret = bh_hash_map_remove(node->thread_info_map,
-                                 (void *)(uintptr_t)thread_info->handle, NULL,
-                                 NULL);
-        (void)ret;
+        os_mutex_lock(&node->thread_info_lock);
+        bh_hash_map_remove(node->thread_info_map,
+                           (void *)(uintptr_t)thread_info->handle, NULL, NULL);
+        os_mutex_unlock(&node->thread_info_lock);
     }
 
     thread_info_destroy(thread_info);
@@ -445,13 +447,13 @@ append_thread_info_node(wasm_exec_env_t exec_env, ThreadInfoNode *thread_info)
         }
     }
 
-    if (!bh_hash_map_insert(node->thread_info_map,
+    os_mutex_lock(&node->thread_info_lock);
+    bool ret = bh_hash_map_insert(node->thread_info_map,
                             (void *)(uintptr_t)thread_info->handle,
-                            thread_info)) {
-        return false;
-    }
+                            thread_info);
+    os_mutex_unlock(&node->thread_info_lock);
 
-    return true;
+    return ret;
 }
 
 static ThreadInfoNode *
@@ -464,7 +466,10 @@ get_thread_info(wasm_exec_env_t exec_env, uint32 handle)
         return NULL;
     }
 
-    return bh_hash_map_find(info->thread_info_map, (void *)(uintptr_t)handle);
+    os_mutex_lock(&info->thread_info_lock);
+    ThreadInfoNode* ret_info_node = bh_hash_map_find(info->thread_info_map, (void *)(uintptr_t)handle);
+    os_mutex_unlock(&info->thread_info_lock);
+    return ret_info_node;
 }
 
 static uint32
