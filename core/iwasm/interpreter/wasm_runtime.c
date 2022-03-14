@@ -1952,7 +1952,8 @@ wasm_module_free(WASMModuleInstance *module_inst, uint32 ptr)
 
         if (memory->heap_handle && memory->heap_data <= addr
             && addr < memory->heap_data_end) {
-            mem_allocator_free(memory->heap_handle, addr);
+            if (mem_allocator_free(memory->heap_handle, addr) != 0)
+                wasm_set_exception(module_inst, "Failed to free memory");
         }
         else if (module_inst->malloc_function && module_inst->free_function
                  && memory->memory_data <= addr

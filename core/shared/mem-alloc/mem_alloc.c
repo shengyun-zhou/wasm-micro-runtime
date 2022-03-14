@@ -49,11 +49,12 @@ mem_allocator_realloc(mem_allocator_t allocator, void *ptr, uint32_t size)
     return gc_realloc_vo((gc_handle_t)allocator, ptr, size);
 }
 
-void
+int
 mem_allocator_free(mem_allocator_t allocator, void *ptr)
 {
     if (ptr)
-        gc_free_vo((gc_handle_t)allocator, ptr);
+        return gc_free_vo((gc_handle_t)allocator, ptr);
+    return GC_SUCCESS;
 }
 
 int

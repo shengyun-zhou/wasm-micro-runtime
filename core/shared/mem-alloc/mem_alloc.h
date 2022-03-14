@@ -35,7 +35,7 @@ mem_allocator_malloc(mem_allocator_t allocator, uint32_t size);
 void *
 mem_allocator_realloc(mem_allocator_t allocator, void *ptr, uint32_t size);
 
-void
+int
 mem_allocator_free(mem_allocator_t allocator, void *ptr);
 
 int

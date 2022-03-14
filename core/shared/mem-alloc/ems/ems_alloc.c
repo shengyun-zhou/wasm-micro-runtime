@@ -434,7 +434,7 @@ alloc_hmu_ex(gc_heap_t *heap, gc_size_t size)
 
 static unsigned long g_total_malloc = 0;
 static unsigned long g_total_free = 0;
-
+void gc_dump_heap_stats(gc_heap_t *heap);
 #if BH_ENABLE_GC_VERIFY == 0
 gc_object_t
 gc_alloc_vo(void *vheap, gc_size_t size)
@@ -485,7 +485,6 @@ gc_alloc_vo_internal(void *vheap, gc_size_t size, const char *file, int line)
     if (tot_size > tot_size_unaligned)
         /* clear buffer appended by GC_ALIGN_8() */
         memset((uint8 *)ret + size, 0, tot_size - tot_size_unaligned);
-
 finish:
     os_mutex_unlock(&heap->lock);
     return ret;
@@ -666,6 +665,10 @@ gc_free_vo_internal(void *vheap, gc_object_t obj, const char *file, int line)
 
             size = hmu_get_size(hmu);
 
+            if (g_total_free + size > g_total_malloc) {
+                ret = GC_ERROR;
+                goto out;
+            }
             g_total_free += size;
 
             heap->total_free_size += size;
@@ -725,6 +728,7 @@ gc_dump_heap_stats(gc_heap_t *heap)
     os_printf("total free: %" PRIu32 ", current: %" PRIu32
               ", highmark: %" PRIu32 "\n",
               heap->total_free_size, heap->current_size, heap->highmark_size);
+    bh_assert(g_total_malloc >= g_total_free);
     os_printf("g_total_malloc=%lu, g_total_free=%lu, occupied=%lu\n",
               g_total_malloc, g_total_free, g_total_malloc - g_total_free);
 }
