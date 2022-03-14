@@ -1326,6 +1326,35 @@ posix_memalign_wrapper(wasm_exec_env_t exec_env, void **memptr, int32 align,
     return 0;
 }
 
+static int32
+pthread_setname_np_wrapper(wasm_exec_env_t exec_env, uint32 tid, char* name)
+{
+    ThreadInfoNode *thread_info_node = get_thread_info(exec_env, tid);
+    if (!thread_info_node || thread_info_node->type != T_THREAD)
+        return -1;
+#ifdef __linux__
+    char thread_name[16];
+    snprintf(thread_name, sizeof(thread_name), "%s", name);
+    return pthread_setname_np(thread_info_node->u.thread_info.thread, thread_name);
+#else
+#endif
+    return -1;
+}
+
+static int32
+pthread_getname_np_wrapper(wasm_exec_env_t exec_env, uint32 tid, char* name, uint32 buflen)
+{
+    ThreadInfoNode *thread_info_node = get_thread_info(exec_env, tid);
+    if (!thread_info_node || thread_info_node->type != T_THREAD)
+        return -1;
+#ifdef __linux__
+    return pthread_getname_np(thread_info_node->u.thread_info.thread, name, buflen);
+#else
+#endif
+    return -1;
+}
+
+
 /* clang-format off */
 #define REG_NATIVE_FUNC(func_name, signature) \
     { #func_name, func_name##_wrapper, signature, NULL }
@@ -1364,6 +1393,8 @@ static NativeSymbol native_symbols_lib_pthread[] = {
     REG_NATIVE_FUNC(pthread_getspecific, "(i)i"),
     REG_NATIVE_FUNC(pthread_key_delete, "(i)i"),
     REG_NATIVE_FUNC(posix_memalign, "(*ii)i"),
+    REG_NATIVE_FUNC(pthread_setname_np, "(i*)i"),
+    REG_NATIVE_FUNC(pthread_getname_np, "(i*i)i"),
 };
 
 uint32
