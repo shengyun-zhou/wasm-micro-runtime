@@ -5148,8 +5148,14 @@ apply_label_patch(WASMLoaderContext *ctx, uint8 depth, uint8 patch_type)
     BranchBlockPatch *node = frame_csp->patch_list;
     BranchBlockPatch *node_prev = NULL, *node_next;
 
-    if (!ctx->p_code_compiled)
+    if (!ctx->p_code_compiled) {
+        while (node) {
+            if (node->patch_type == patch_type)
+                ctx->code_compiled_size += sizeof(void*);
+            node = node->next;
+        }
         return;
+    }
 
     while (node) {
         node_next = node->next;
