@@ -10,6 +10,9 @@
 #endif
 #include "platform_api_vmcore.h"
 #include "platform_api_extension.h"
+#ifdef __GLIBC__
+#include <execinfo.h>
+#endif
 
 typedef struct {
     thread_start_routine_t start;
@@ -518,6 +521,7 @@ mask_signals(int how)
     sigemptyset(&set);
     sigaddset(&set, SIGSEGV);
     sigaddset(&set, SIGBUS);
+    sigaddset(&set, SIGABRT);
     pthread_sigmask(how, &set, NULL);
 }
 
@@ -544,8 +548,12 @@ signal_callback(int sig_num, siginfo_t *sig_info, void *sig_ucontext)
             os_printf("unhandle signal %d, si_addr: %p\n", sig_num, sig_addr);
             break;
     }
-
-    abort();
+#ifdef __GLIBC__
+    void* trace[64];
+    int nptrs = backtrace(trace, 64);
+    backtrace_symbols_fd(trace, nptrs, STDOUT_FILENO);
+#endif
+    _exit(255);
 }
 
 int
@@ -586,7 +594,8 @@ os_thread_signal_init(os_signal_handler handler)
     sig_act.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_NODEFER;
     sigemptyset(&sig_act.sa_mask);
     if (sigaction(SIGSEGV, &sig_act, NULL) != 0
-        || sigaction(SIGBUS, &sig_act, NULL) != 0) {
+        || sigaction(SIGBUS, &sig_act, NULL) != 0
+        || sigaction(SIGABRT, &sig_act, NULL) != 0) {
         os_printf("Failed to register signal handler\n");
         goto fail3;
     }
