@@ -1111,26 +1111,31 @@ getpid_wrapper(wasm_exec_env_t exec_env)
 
 struct sysconf_meminfo {
     uint32_t page_size;
-    uint64_t heap_size;
+    uint64_t max_memory_size;
 };
 
 static void get_sysconf_meminfo(wasm_exec_env_t exec_env, struct sysconf_meminfo* meminfo)
 {
     memset(meminfo, 0, sizeof(*meminfo));
-    meminfo->page_size = os_getpagesize();
     wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
     if (module_inst->module_type == Wasm_Module_Bytecode) {
         WASMMemoryInstance* mem_inst = ((WASMModuleInstance*)module_inst)->default_memory;
 #if WASM_ENABLE_SHARED_MEMORY != 0
         os_mutex_lock(&mem_inst->mem_lock);
 #endif
-        meminfo->heap_size = (uint8_t*)mem_inst->heap_data_end - (uint8_t*)mem_inst->heap_data;
+        meminfo->page_size = mem_inst->num_bytes_per_page;
+        meminfo->max_memory_size = (uint8_t*)mem_inst->heap_data_end - (uint8_t*)mem_inst->heap_data;
+        // Exclude app heap size here
+        meminfo->max_memory_size = meminfo->page_size * mem_inst->max_page_count - meminfo->max_memory_size;
 #if WASM_ENABLE_SHARED_MEMORY != 0
         os_mutex_unlock(&mem_inst->mem_lock);
 #endif
     } else if (module_inst->module_type == Wasm_Module_AoT) {
         AOTMemoryInstance* mem_inst = ((AOTModuleInstance*)module_inst)->global_table_data.memory_instances;
-        meminfo->heap_size = (uint8_t*)mem_inst->heap_data_end.ptr - (uint8_t*)mem_inst->heap_data.ptr;
+        meminfo->page_size = mem_inst->num_bytes_per_page;
+        meminfo->max_memory_size = (uint8_t*)mem_inst->heap_data_end.ptr - (uint8_t*)mem_inst->heap_data.ptr;
+        // Exclude app heap size here
+        meminfo->max_memory_size = meminfo->page_size * mem_inst->max_page_count - meminfo->max_memory_size;
     }
 }
 
@@ -1176,7 +1181,7 @@ __wamr_ext_sysconf_wrapper(wasm_exec_env_t exec_env, int name, int64_t* ret_val)
             if (name == __WASI_SC_PAGESIZE)
                 *ret_val = meminfo.page_size;
             else if (name == __WASI_SC_PHYS_PAGES)
-                *ret_val = meminfo.heap_size / meminfo.page_size;
+                *ret_val = meminfo.max_memory_size / meminfo.page_size;
             return 0;
         }
         default:
