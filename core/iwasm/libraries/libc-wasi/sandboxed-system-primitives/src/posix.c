@@ -67,6 +67,7 @@ static_assert(sizeof(struct iovec) == sizeof(__wasi_ciovec_t),
 static __thread struct fd_table *curfds;
 static __thread struct fd_prestats *prestats;
 static __thread struct argv_environ_values *argv_environ;
+static __thread struct addr_pool *addr_pool;
 #endif
 
 // Converts a POSIX error code to a CloudABI error code.
@@ -3318,7 +3319,7 @@ wasmtime_ssp_sock_shutdown(
 
     struct fd_object *fo;
     __wasi_errno_t error =
-        fd_object_get(curfds, &fo, sock, __WASI_RIGHT_SOCK_SHUTDOWN, 0);
+        fd_object_get(curfds, &fo, sock, 0, 0);
     if (error != 0)
         return error;
 
@@ -3445,6 +3446,91 @@ fd_prestats_destroy(struct fd_prestats *pt)
         }
         rwlock_destroy(&pt->lock);
         wasm_runtime_free(pt->prestats);
+    }
+}
+
+bool
+addr_pool_init(struct addr_pool *addr_pool)
+{
+    addr_pool->next = NULL;
+    addr_pool->addr = 0;
+    addr_pool->mask = 0;
+    return true;
+}
+
+bool
+addr_pool_insert(struct addr_pool *addr_pool, const char *addr, uint8 mask)
+{
+    struct addr_pool *cur = addr_pool;
+    struct addr_pool *next;
+
+    if (!addr_pool) {
+        return false;
+    }
+
+    if (!(next = wasm_runtime_malloc(sizeof(struct addr_pool)))) {
+        return false;
+    }
+
+    next->next = NULL;
+    next->mask = mask;
+    if (os_socket_inet_network(addr, &next->addr) != BHT_OK) {
+        wasm_runtime_free(next);
+        return false;
+    }
+
+    /* attach with */
+    while (cur->next) {
+        cur = cur->next;
+    }
+    cur->next = next;
+    return true;
+}
+
+static bool
+compare_address(const struct addr_pool *addr_pool_entry, const char *addr)
+{
+    /* host order */
+    uint32 target;
+    uint32 address = addr_pool_entry->addr;
+    /* 0.0.0.0 means any address */
+    if (0 == address) {
+        return true;
+    }
+
+    if (os_socket_inet_network(addr, &target) != BHT_OK) {
+        return false;
+    }
+
+    uint32 mask = addr_pool_entry->mask;
+    uint32 first_address = address & mask;
+    uint32 last_address = address | (~mask);
+    return first_address <= target && target <= last_address;
+}
+
+bool
+addr_pool_search(struct addr_pool *addr_pool, const char *addr)
+{
+    struct addr_pool *cur = addr_pool->next;
+
+    while (cur) {
+        if (compare_address(cur, addr))
+            return true;
+        cur = cur->next;
+    }
+
+    return false;
+}
+
+void
+addr_pool_destroy(struct addr_pool *addr_pool)
+{
+    struct addr_pool *cur = addr_pool->next;
+
+    while (cur) {
+        struct addr_pool *next = cur->next;
+        wasm_runtime_free(cur);
+        cur = next;
     }
 }
 

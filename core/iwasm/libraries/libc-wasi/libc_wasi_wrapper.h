@@ -13,8 +13,6 @@
 extern "C" {
 #endif
 
-typedef __wasi_address_family_t wasi_address_family_t;
-typedef __wasi_addr_t wasi_addr_t;
 typedef __wasi_advice_t wasi_advice_t;
 typedef __wasi_ciovec_t wasi_ciovec_t;
 typedef __wasi_clockid_t wasi_clockid_t;
@@ -31,7 +29,6 @@ typedef __wasi_filestat_t wasi_filestat_t;
 typedef __wasi_filetype_t wasi_filetype_t;
 typedef __wasi_fstflags_t wasi_fstflags_t;
 typedef __wasi_iovec_t wasi_iovec_t;
-typedef __wasi_ip_port_t wasi_ip_port_t;
 typedef __wasi_lookupflags_t wasi_lookupflags_t;
 typedef __wasi_oflags_t wasi_oflags_t;
 typedef __wasi_preopentype_t wasi_preopentype_t;
@@ -43,7 +40,6 @@ typedef __wasi_sdflags_t wasi_sdflags_t;
 typedef __wasi_siflags_t wasi_siflags_t;
 typedef __wasi_signal_t wasi_signal_t;
 typedef __wasi_size_t wasi_size_t;
-typedef __wasi_sock_type_t wasi_sock_type_t;
 typedef __wasi_subscription_t wasi_subscription_t;
 typedef __wasi_timestamp_t wasi_timestamp_t;
 typedef __wasi_whence_t wasi_whence_t;

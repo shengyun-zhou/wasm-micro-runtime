@@ -49,6 +49,9 @@ _Static_assert(_Alignof(int64_t) == 8, "non-wasi data layout");
 _Static_assert(_Alignof(uint64_t) == 8, "non-wasi data layout");
 #endif
 
+typedef uint32_t __wasi_size_t;
+_Static_assert(_Alignof(__wasi_size_t) == 4, "non-wasi data layout");
+
 typedef uint8_t __wasi_advice_t;
 #define __WASI_ADVICE_NORMAL     (0)
 #define __WASI_ADVICE_SEQUENTIAL (1)
@@ -211,35 +214,44 @@ typedef uint64_t __wasi_rights_t;
  * Observe that WASI defines rights in the plural form
  * TODO: refactor to use RIGHTS instead of RIGHT
  */
-#define __WASI_RIGHT_FD_DATASYNC ((__wasi_rights_t)(1 << 0))
-#define __WASI_RIGHT_FD_READ ((__wasi_rights_t)(1 << 1))
-#define __WASI_RIGHT_FD_SEEK ((__wasi_rights_t)(1 << 2))
-#define __WASI_RIGHT_FD_FDSTAT_SET_FLAGS ((__wasi_rights_t)(1 << 3))
-#define __WASI_RIGHT_FD_SYNC ((__wasi_rights_t)(1 << 4))
-#define __WASI_RIGHT_FD_TELL ((__wasi_rights_t)(1 << 5))
-#define __WASI_RIGHT_FD_WRITE ((__wasi_rights_t)(1 << 6))
-#define __WASI_RIGHT_FD_ADVISE ((__wasi_rights_t)(1 << 7))
-#define __WASI_RIGHT_FD_ALLOCATE ((__wasi_rights_t)(1 << 8))
-#define __WASI_RIGHT_PATH_CREATE_DIRECTORY ((__wasi_rights_t)(1 << 9))
-#define __WASI_RIGHT_PATH_CREATE_FILE ((__wasi_rights_t)(1 << 10))
-#define __WASI_RIGHT_PATH_LINK_SOURCE ((__wasi_rights_t)(1 << 11))
-#define __WASI_RIGHT_PATH_LINK_TARGET ((__wasi_rights_t)(1 << 12))
-#define __WASI_RIGHT_PATH_OPEN ((__wasi_rights_t)(1 << 13))
-#define __WASI_RIGHT_FD_READDIR ((__wasi_rights_t)(1 << 14))
-#define __WASI_RIGHT_PATH_READLINK ((__wasi_rights_t)(1 << 15))
-#define __WASI_RIGHT_PATH_RENAME_SOURCE ((__wasi_rights_t)(1 << 16))
-#define __WASI_RIGHT_PATH_RENAME_TARGET ((__wasi_rights_t)(1 << 17))
-#define __WASI_RIGHT_PATH_FILESTAT_GET ((__wasi_rights_t)(1 << 18))
-#define __WASI_RIGHT_PATH_FILESTAT_SET_SIZE ((__wasi_rights_t)(1 << 19))
-#define __WASI_RIGHT_PATH_FILESTAT_SET_TIMES ((__wasi_rights_t)(1 << 20))
-#define __WASI_RIGHT_FD_FILESTAT_GET ((__wasi_rights_t)(1 << 21))
-#define __WASI_RIGHT_FD_FILESTAT_SET_SIZE ((__wasi_rights_t)(1 << 22))
-#define __WASI_RIGHT_FD_FILESTAT_SET_TIMES ((__wasi_rights_t)(1 << 23))
-#define __WASI_RIGHT_PATH_SYMLINK ((__wasi_rights_t)(1 << 24))
-#define __WASI_RIGHT_PATH_REMOVE_DIRECTORY ((__wasi_rights_t)(1 << 25))
-#define __WASI_RIGHT_PATH_UNLINK_FILE ((__wasi_rights_t)(1 << 26))
-#define __WASI_RIGHT_POLL_FD_READWRITE ((__wasi_rights_t)(1 << 27))
-#define __WASI_RIGHT_SOCK_SHUTDOWN ((__wasi_rights_t)(1 << 28))
+#define __WASI_RIGHT_FD_DATASYNC ((__wasi_rights_t)(UINT64_C(1) << 0))
+#define __WASI_RIGHT_FD_READ ((__wasi_rights_t)(UINT64_C(1) << 1))
+#define __WASI_RIGHT_FD_SEEK ((__wasi_rights_t)(UINT64_C(1) << 2))
+#define __WASI_RIGHT_FD_FDSTAT_SET_FLAGS ((__wasi_rights_t)(UINT64_C(1) << 3))
+#define __WASI_RIGHT_FD_SYNC ((__wasi_rights_t)(UINT64_C(1) << 4))
+#define __WASI_RIGHT_FD_TELL ((__wasi_rights_t)(UINT64_C(1) << 5))
+#define __WASI_RIGHT_FD_WRITE ((__wasi_rights_t)(UINT64_C(1) << 6))
+#define __WASI_RIGHT_FD_ADVISE ((__wasi_rights_t)(UINT64_C(1) << 7))
+#define __WASI_RIGHT_FD_ALLOCATE ((__wasi_rights_t)(UINT64_C(1) << 8))
+#define __WASI_RIGHT_PATH_CREATE_DIRECTORY ((__wasi_rights_t)(UINT64_C(1) << 9))
+#define __WASI_RIGHT_PATH_CREATE_FILE ((__wasi_rights_t)(UINT64_C(1) << 10))
+#define __WASI_RIGHT_PATH_LINK_SOURCE ((__wasi_rights_t)(UINT64_C(1) << 11))
+#define __WASI_RIGHT_PATH_LINK_TARGET ((__wasi_rights_t)(UINT64_C(1) << 12))
+#define __WASI_RIGHT_PATH_OPEN ((__wasi_rights_t)(UINT64_C(1) << 13))
+#define __WASI_RIGHT_FD_READDIR ((__wasi_rights_t)(UINT64_C(1) << 14))
+#define __WASI_RIGHT_PATH_READLINK ((__wasi_rights_t)(UINT64_C(1) << 15))
+#define __WASI_RIGHT_PATH_RENAME_SOURCE ((__wasi_rights_t)(UINT64_C(1) << 16))
+#define __WASI_RIGHT_PATH_RENAME_TARGET ((__wasi_rights_t)(UINT64_C(1) << 17))
+#define __WASI_RIGHT_PATH_FILESTAT_GET ((__wasi_rights_t)(UINT64_C(1) << 18))
+#define __WASI_RIGHT_PATH_FILESTAT_SET_SIZE ((__wasi_rights_t)(UINT64_C(1) << 19))
+#define __WASI_RIGHT_PATH_FILESTAT_SET_TIMES ((__wasi_rights_t)(UINT64_C(1) << 20))
+#define __WASI_RIGHT_FD_FILESTAT_GET ((__wasi_rights_t)(UINT64_C(1) << 21))
+#define __WASI_RIGHT_FD_FILESTAT_SET_SIZE ((__wasi_rights_t)(UINT64_C(1) << 22))
+#define __WASI_RIGHT_FD_FILESTAT_SET_TIMES ((__wasi_rights_t)(UINT64_C(1) << 23))
+#define __WASI_RIGHT_PATH_SYMLINK ((__wasi_rights_t)(UINT64_C(1) << 24))
+#define __WASI_RIGHT_PATH_REMOVE_DIRECTORY ((__wasi_rights_t)(UINT64_C(1) << 25))
+#define __WASI_RIGHT_PATH_UNLINK_FILE ((__wasi_rights_t)(UINT64_C(1) << 26))
+#define __WASI_RIGHT_POLL_FD_READWRITE ((__wasi_rights_t)(UINT64_C(1) << 27))
+#define __WASI_RIGHT_SOCK_CONNECT ((__wasi_rights_t)(UINT64_C(1) << 28))
+#define __WASI_RIGHT_SOCK_LISTEN ((__wasi_rights_t)(UINT64_C(1) << 29))
+#define __WASI_RIGHT_SOCK_BIND ((__wasi_rights_t)(UINT64_C(1) << 30))
+#define __WASI_RIGHT_SOCK_ACCEPT ((__wasi_rights_t)(UINT64_C(1) << 31))
+#define __WASI_RIGHT_SOCK_RECV ((__wasi_rights_t)(UINT64_C(1) << 32))
+#define __WASI_RIGHT_SOCK_SEND ((__wasi_rights_t)(UINT64_C(1) << 33))
+#define __WASI_RIGHT_SOCK_ADDR_LOCAL ((__wasi_rights_t)(UINT64_C(1) << 34))
+#define __WASI_RIGHT_SOCK_ADDR_REMOTE ((__wasi_rights_t)(UINT64_C(1) << 35))
+#define __WASI_RIGHT_SOCK_RECV_FROM ((__wasi_rights_t)(UINT64_C(1) << 36))
+#define __WASI_RIGHT_SOCK_SEND_TO ((__wasi_rights_t)(UINT64_C(1) << 37))
 
 typedef uint16_t __wasi_roflags_t;
 #define __WASI_SOCK_RECV_DATA_TRUNCATED (0x0001)
@@ -301,6 +313,7 @@ typedef uint8_t __wasi_preopentype_t;
 struct fd_table;
 struct fd_prestats;
 struct argv_environ_values;
+struct addr_pool;
 
 typedef struct __wasi_dirent_t {
     __wasi_dircookie_t d_next;
