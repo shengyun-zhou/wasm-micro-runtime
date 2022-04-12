@@ -51,12 +51,7 @@ cmake -DWAMR_BUILD_PLATFORM=linux -DWAMR_BUILD_TARGET=ARM
 
 - **WAMR_BUILD_LIBC_UVWASI**=1/0 (Experiment), build the [WASI](https://github.com/WebAssembly/WASI) libc subset for WASM app based on [uvwasi](https://github.com/nodejs/uvwasi) implementation, default to disable if not set
 
-> Note: for platform which doesn't support **WAMR_BUILD_LIBC_WASI**, e.g. Windows, developer can try using **WAMR_BUILD_LIBC_UVWASI**. And the uvwasi source code must be cloned under core/deps:
->
-> ```bash
-> cd <WAMR-ROOT>/core/deps
-> git clone https://github.com/nodejs/uvwasi.git
-> ```
+> Note: for platform which doesn't support **WAMR_BUILD_LIBC_WASI**, e.g. Windows, developer can try using **WAMR_BUILD_LIBC_UVWASI**.
 
 #### **Enable Multi-Module feature**
 
@@ -70,6 +65,9 @@ cmake -DWAMR_BUILD_PLATFORM=linux -DWAMR_BUILD_TARGET=ARM
 
 #### **Enable shared memory feature**
 - **WAMR_BUILD_SHARED_MEMORY**=1/0, default to disable if not set
+
+#### **Enable bulk memory feature**
+- **WAMR_BUILD_BULK_MEMORY**=1/0, default to disable if not set
 
 #### **Enable thread manager**
 - **WAMR_BUILD_THREAD_MGR**=1/0, default to disable if not set
@@ -297,9 +295,6 @@ Make sure `MSVC` and `cmake` are installed and available in the command line env
 
 Then build the source codes:
 ``` Bash
-cd core/deps/
-git clone https://github.com/nodejs/uvwasi.git
-
 cd product-mini/platforms/windows/
 mkdir build
 cd build
@@ -335,8 +330,8 @@ pacman -R cmake
 pacman -S mingw-w64-x86_64-cmake
 ```
 
-Then follow the build instructions for Windows above, minus cloning uvwasi and
-adding the following arguments for cmake:
+Then follow the build instructions for Windows above, and add the following
+arguments for cmake:
 
 ```Bash
 cmake .. -G"Unix Makefiles" \

@@ -1773,6 +1773,33 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 HANDLE_OP_END();
             }
 
+            /* constant instructions */
+            HANDLE_OP(WASM_OP_F64_CONST)
+            HANDLE_OP(WASM_OP_I64_CONST)
+            {
+                uint8 *orig_ip = frame_ip;
+
+                frame_ip += sizeof(uint64);
+                addr_ret = GET_OFFSET();
+
+                bh_memcpy_s(frame_lp + addr_ret, sizeof(uint64), orig_ip,
+                            sizeof(uint64));
+                HANDLE_OP_END();
+            }
+
+            HANDLE_OP(WASM_OP_F32_CONST)
+            HANDLE_OP(WASM_OP_I32_CONST)
+            {
+                uint8 *orig_ip = frame_ip;
+
+                frame_ip += sizeof(uint32);
+                addr_ret = GET_OFFSET();
+
+                bh_memcpy_s(frame_lp + addr_ret, sizeof(uint32), orig_ip,
+                            sizeof(uint32));
+                HANDLE_OP_END();
+            }
+
             /* comparison instructions of i32 */
             HANDLE_OP(WASM_OP_I32_EQZ)
             {
@@ -2984,8 +3011,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                         s = (uint32)POP_I32();
                         d = (uint32)POP_I32();
 
-                        if (s + n > dst_tbl_inst->cur_size
-                            || d + n > src_tbl_inst->cur_size) {
+                        if (d + n > dst_tbl_inst->cur_size
+                            || s + n > src_tbl_inst->cur_size) {
                             wasm_set_exception(module,
                                                "out of bounds table access");
                             goto got_exception;
@@ -3496,10 +3523,6 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         HANDLE_OP(WASM_OP_F64_LOAD)
         HANDLE_OP(EXT_OP_GET_LOCAL_FAST)
         HANDLE_OP(WASM_OP_GET_LOCAL)
-        HANDLE_OP(WASM_OP_F64_CONST)
-        HANDLE_OP(WASM_OP_I64_CONST)
-        HANDLE_OP(WASM_OP_F32_CONST)
-        HANDLE_OP(WASM_OP_I32_CONST)
         HANDLE_OP(WASM_OP_DROP)
         HANDLE_OP(WASM_OP_DROP_64)
         HANDLE_OP(WASM_OP_BLOCK)
