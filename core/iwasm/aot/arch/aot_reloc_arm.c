@@ -88,6 +88,32 @@ void __umoddi3();
 void __umodsi3();
 void __unorddf2();
 void __unordsf2();
+
+#define DECLARE_ATOMIC_OP(N, iN) \
+    iN __aot_sync_val_compare_and_swap_##N(volatile iN *ptr, iN expected, iN desired) { return __sync_val_compare_and_swap_##N(ptr, expected, desired); } \
+    iN __aot_sync_lock_test_and_set_##N(volatile iN *ptr, iN val) { return __sync_lock_test_and_set_##N(ptr, val); } \
+    iN __aot_sync_fetch_and_add_##N(volatile iN *ptr, iN val) { return __sync_fetch_and_add_##N(ptr, val); } \
+    iN __aot_sync_fetch_and_sub_##N(volatile iN *ptr, iN val) { return __sync_fetch_and_sub_##N(ptr, val); } \
+    iN __aot_sync_fetch_and_and_##N(volatile iN *ptr, iN val) { return __sync_fetch_and_and_##N(ptr, val); } \
+    iN __aot_sync_fetch_and_or_##N(volatile iN *ptr, iN val) { return __sync_fetch_and_or_##N(ptr, val); } \
+    iN __aot_sync_fetch_and_xor_##N(volatile iN *ptr, iN val) { return __sync_fetch_and_xor_##N(ptr, val); } \
+    iN __aot_sync_fetch_and_nand_##N(volatile iN *ptr, iN val) { return __sync_fetch_and_nand_##N(ptr, val); }
+
+DECLARE_ATOMIC_OP(1, uint8)
+DECLARE_ATOMIC_OP(2, uint16)
+DECLARE_ATOMIC_OP(4, uint32)
+DECLARE_ATOMIC_OP(8, uint64)
+
+#define REG_ATOMIC_SYMBOLS(N) \
+    { "__sync_val_compare_and_swap_"#N, (void *)__aot_sync_val_compare_and_swap_##N }, \
+    { "__sync_lock_test_and_set_"#N, (void *)__aot_sync_lock_test_and_set_##N }, \
+    { "__sync_fetch_and_add_"#N, (void *)__aot_sync_fetch_and_add_##N }, \
+    { "__sync_fetch_and_sub_"#N, (void *)__aot_sync_fetch_and_sub_##N }, \
+    { "__sync_fetch_and_and_"#N, (void *)__aot_sync_fetch_and_and_##N }, \
+    { "__sync_fetch_and_or_"#N, (void *)__aot_sync_fetch_and_or_##N }, \
+    { "__sync_fetch_and_xor_"#N, (void *)__aot_sync_fetch_and_xor_##N }, \
+    { "__sync_fetch_and_nand_"#N, (void *)__aot_sync_fetch_and_nand_##N },
+
 /* clang-format on */
 
 static SymbolMap target_sym_map[] = {
@@ -172,6 +198,11 @@ static SymbolMap target_sym_map[] = {
     REG_SYM(__umodsi3),
     REG_SYM(__unorddf2),
     REG_SYM(__unordsf2),
+
+    REG_ATOMIC_SYMBOLS(1)
+    REG_ATOMIC_SYMBOLS(2)
+    REG_ATOMIC_SYMBOLS(4)
+    REG_ATOMIC_SYMBOLS(8)
 };
 
 static void
