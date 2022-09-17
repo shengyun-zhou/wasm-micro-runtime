@@ -12,43 +12,97 @@
 #define R_ARM_MOVT_ABS 44
 
 /* clang-format off */
+void __absvdi2();
+void __absvsi2();
 void __adddf3();
 void __addsf3();
+void __addvdi3();
+void __addvsi3();
+void __aeabi_cdcmpeq();
+void __aeabi_cdcmple();
+void __aeabi_cdrcmple();
+void __aeabi_cfcmpeq();
+void __aeabi_cfcmple();
+void __aeabi_cfrcmple();
+void __aeabi_d2f();
 void __aeabi_d2iz();
 void __aeabi_d2lz();
+void __aeabi_d2uiz();
 void __aeabi_d2ulz();
 void __aeabi_dadd();
+void __aeabi_dcmpeq();
 void __aeabi_dcmpge();
+void __aeabi_dcmpgt();
 void __aeabi_dcmple();
 void __aeabi_dcmplt();
 void __aeabi_dcmpun();
 void __aeabi_ddiv();
+void __aeabi_dmul();
+void __aeabi_dneg();
+void __aeabi_drsub();
+void __aeabi_dsub();
 void __aeabi_f2d();
 void __aeabi_f2iz();
 void __aeabi_f2lz();
+void __aeabi_f2uiz();
 void __aeabi_f2ulz();
+void __aeabi_fadd();
+void __aeabi_fcmpeq();
 void __aeabi_fcmpge();
+void __aeabi_fcmpgt();
 void __aeabi_fcmple();
 void __aeabi_fcmplt();
 void __aeabi_fcmpun();
+void __aeabi_fdiv();
+void __aeabi_fmul();
+void __aeabi_fneg();
+void __aeabi_frsub();
+void __aeabi_fsub();
 void __aeabi_i2d();
+void __aeabi_i2f();
 void __aeabi_idiv();
+void __aeabi_idiv0();
 void __aeabi_idivmod();
 void __aeabi_l2d();
 void __aeabi_l2f();
+void __aeabi_lasr();
+void __aeabi_lcmp();
+void __aeabi_ldiv0();
 void __aeabi_ldivmod();
+void __aeabi_llsl();
+void __aeabi_llsr();
+void __aeabi_lmul();
+void __aeabi_ui2d();
+void __aeabi_ui2f();
 void __aeabi_uidiv();
 void __aeabi_uidivmod();
 void __aeabi_ul2d();
 void __aeabi_ul2f();
+void __aeabi_ulcmp();
 void __aeabi_uldivmod();
+void __ashldi3();
+void __ashrdi3();
+void __bswapdi2();
+void __bswapsi2();
+void __clzdi2();
 void __clzsi2();
+void __cmpdf2();
+void __cmpdi2();
+void __cmpsf2();
+void __ctzdi2();
+void __ctzsi2();
+void __divdc3();
 void __divdf3();
 void __divdi3();
+void __divmoddi4();
+void __divsc3();
 void __divsf3();
 void __divsi3();
 void __eqdf2();
+void __eqsf2();
 void __extendsfdf2();
+void __ffsdi2();
+void __ffssi2();
 void __fixdfdi();
 void __fixdfsi();
 void __fixsfdi();
@@ -56,6 +110,7 @@ void __fixsfsi();
 void __fixunsdfdi();
 void __fixunsdfsi();
 void __fixunssfdi();
+void __fixunssfsi();
 void __floatdidf();
 void __floatdisf();
 void __floatsidf();
@@ -66,21 +121,43 @@ void __floatunsidf();
 void __floatunsisf();
 void __gedf2();
 void __gesf2();
+void __gnu_f2h_ieee();
+void __gnu_h2f_ieee();
 void __gtdf2();
 void __gtsf2();
 void __ledf2();
 void __lesf2();
+void __lshrdi3();
 void __ltdf2();
 void __ltsf2();
 void __moddi3();
 void __modsi3();
+void __muldc3();
 void __muldf3();
+void __muldi3();
+void __mulsc3();
 void __mulsf3();
+void __mulvdi3();
+void __mulvsi3();
 void __nedf2();
+void __negdf2();
+void __negdi2();
+void __negsf2();
+void __negvdi2();
+void __negvsi2();
 void __nesf2();
+void __paritydi2();
+void __paritysi2();
+void __popcountdi2();
+void __popcountsi2();
+void __powidf2();
+void __powisf2();
 void __subdf3();
 void __subsf3();
+void __subvdi3();
+void __subvsi3();
 void __truncdfsf2();
+void __ucmpdi2();
 void __udivdi3();
 void __udivmoddi4();
 void __udivsi3();
@@ -88,6 +165,9 @@ void __umoddi3();
 void __umodsi3();
 void __unorddf2();
 void __unordsf2();
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsync-fetch-and-nand-semantics-changed"
 
 #define DECLARE_ATOMIC_OP(N, iN) \
     iN __aot_sync_val_compare_and_swap_##N(volatile iN *ptr, iN expected, iN desired) { return __sync_val_compare_and_swap_##N(ptr, expected, desired); } \
@@ -104,6 +184,9 @@ DECLARE_ATOMIC_OP(2, uint16)
 DECLARE_ATOMIC_OP(4, uint32)
 DECLARE_ATOMIC_OP(8, uint64)
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsync-fetch-and-nand-semantics-changed"
+
 #define REG_ATOMIC_SYMBOLS(N) \
     { "__sync_val_compare_and_swap_"#N, (void *)__aot_sync_val_compare_and_swap_##N }, \
     { "__sync_lock_test_and_set_"#N, (void *)__aot_sync_lock_test_and_set_##N }, \
@@ -114,50 +197,100 @@ DECLARE_ATOMIC_OP(8, uint64)
     { "__sync_fetch_and_xor_"#N, (void *)__aot_sync_fetch_and_xor_##N }, \
     { "__sync_fetch_and_nand_"#N, (void *)__aot_sync_fetch_and_nand_##N },
 
-/* clang-format on */
-
 static SymbolMap target_sym_map[] = {
-    /* clang-format off */
     REG_COMMON_SYMBOLS
     /* compiler-rt symbols that come from compiler(e.g. gcc) */
+    REG_SYM(__absvdi2),
+    REG_SYM(__absvsi2),
     REG_SYM(__adddf3),
     REG_SYM(__addsf3),
-    /* clang-format on */
+    REG_SYM(__addvdi3),
+    REG_SYM(__addvsi3),
+    REG_SYM(__aeabi_cdcmpeq),
+    REG_SYM(__aeabi_cdcmple),
+    REG_SYM(__aeabi_cdrcmple),
+    REG_SYM(__aeabi_cfcmpeq),
+    REG_SYM(__aeabi_cfcmple),
+    REG_SYM(__aeabi_cfrcmple),
+    REG_SYM(__aeabi_d2f),
     REG_SYM(__aeabi_d2iz),
     REG_SYM(__aeabi_d2lz),
+    REG_SYM(__aeabi_d2uiz),
     REG_SYM(__aeabi_d2ulz),
     REG_SYM(__aeabi_dadd),
+    REG_SYM(__aeabi_dcmpeq),
     REG_SYM(__aeabi_dcmpge),
+    REG_SYM(__aeabi_dcmpgt),
     REG_SYM(__aeabi_dcmple),
     REG_SYM(__aeabi_dcmplt),
     REG_SYM(__aeabi_dcmpun),
     REG_SYM(__aeabi_ddiv),
+    REG_SYM(__aeabi_dmul),
+    REG_SYM(__aeabi_dneg),
+    REG_SYM(__aeabi_drsub),
+    REG_SYM(__aeabi_dsub),
     REG_SYM(__aeabi_f2d),
     REG_SYM(__aeabi_f2iz),
     REG_SYM(__aeabi_f2lz),
+    REG_SYM(__aeabi_f2uiz),
     REG_SYM(__aeabi_f2ulz),
+    REG_SYM(__aeabi_fadd),
+    REG_SYM(__aeabi_fcmpeq),
     REG_SYM(__aeabi_fcmpge),
+    REG_SYM(__aeabi_fcmpgt),
     REG_SYM(__aeabi_fcmple),
     REG_SYM(__aeabi_fcmplt),
     REG_SYM(__aeabi_fcmpun),
+    REG_SYM(__aeabi_fdiv),
+    REG_SYM(__aeabi_fmul),
+    REG_SYM(__aeabi_fneg),
+    REG_SYM(__aeabi_frsub),
+    REG_SYM(__aeabi_fsub),
     REG_SYM(__aeabi_i2d),
+    REG_SYM(__aeabi_i2f),
     REG_SYM(__aeabi_idiv),
+    REG_SYM(__aeabi_idiv0),
     REG_SYM(__aeabi_idivmod),
     REG_SYM(__aeabi_l2d),
     REG_SYM(__aeabi_l2f),
+    REG_SYM(__aeabi_lasr),
+    REG_SYM(__aeabi_lcmp),
+    REG_SYM(__aeabi_ldiv0),
     REG_SYM(__aeabi_ldivmod),
+    REG_SYM(__aeabi_llsl),
+    REG_SYM(__aeabi_llsr),
+    REG_SYM(__aeabi_lmul),
+    REG_SYM(__aeabi_ui2d),
+    REG_SYM(__aeabi_ui2f),
     REG_SYM(__aeabi_uidiv),
     REG_SYM(__aeabi_uidivmod),
     REG_SYM(__aeabi_ul2d),
     REG_SYM(__aeabi_ul2f),
+    REG_SYM(__aeabi_ulcmp),
     REG_SYM(__aeabi_uldivmod),
+    REG_SYM(__ashldi3),
+    REG_SYM(__ashrdi3),
+    REG_SYM(__bswapdi2),
+    REG_SYM(__bswapsi2),
+    REG_SYM(__clzdi2),
     REG_SYM(__clzsi2),
+    REG_SYM(__cmpdf2),
+    REG_SYM(__cmpdi2),
+    REG_SYM(__cmpsf2),
+    REG_SYM(__ctzdi2),
+    REG_SYM(__ctzsi2),
+    REG_SYM(__divdc3),
     REG_SYM(__divdf3),
     REG_SYM(__divdi3),
+    REG_SYM(__divmoddi4),
+    REG_SYM(__divsc3),
     REG_SYM(__divsf3),
     REG_SYM(__divsi3),
     REG_SYM(__eqdf2),
+    REG_SYM(__eqsf2),
     REG_SYM(__extendsfdf2),
+    REG_SYM(__ffsdi2),
+    REG_SYM(__ffssi2),
     REG_SYM(__fixdfdi),
     REG_SYM(__fixdfsi),
     REG_SYM(__fixsfdi),
@@ -165,6 +298,7 @@ static SymbolMap target_sym_map[] = {
     REG_SYM(__fixunsdfdi),
     REG_SYM(__fixunsdfsi),
     REG_SYM(__fixunssfdi),
+    REG_SYM(__fixunssfsi),
     REG_SYM(__floatdidf),
     REG_SYM(__floatdisf),
     REG_SYM(__floatsidf),
@@ -175,22 +309,43 @@ static SymbolMap target_sym_map[] = {
     REG_SYM(__floatunsisf),
     REG_SYM(__gedf2),
     REG_SYM(__gesf2),
+    REG_SYM(__gnu_f2h_ieee),
+    REG_SYM(__gnu_h2f_ieee),
     REG_SYM(__gtdf2),
     REG_SYM(__gtsf2),
     REG_SYM(__ledf2),
     REG_SYM(__lesf2),
+    REG_SYM(__lshrdi3),
     REG_SYM(__ltdf2),
     REG_SYM(__ltsf2),
     REG_SYM(__moddi3),
     REG_SYM(__modsi3),
+    REG_SYM(__muldc3),
     REG_SYM(__muldf3),
-    REG_SYM(__muldf3),
+    REG_SYM(__muldi3),
+    REG_SYM(__mulsc3),
     REG_SYM(__mulsf3),
+    REG_SYM(__mulvdi3),
+    REG_SYM(__mulvsi3),
     REG_SYM(__nedf2),
+    REG_SYM(__negdf2),
+    REG_SYM(__negdi2),
+    REG_SYM(__negsf2),
+    REG_SYM(__negvdi2),
+    REG_SYM(__negvsi2),
     REG_SYM(__nesf2),
+    REG_SYM(__paritydi2),
+    REG_SYM(__paritysi2),
+    REG_SYM(__popcountdi2),
+    REG_SYM(__popcountsi2),
+    REG_SYM(__powidf2),
+    REG_SYM(__powisf2),
     REG_SYM(__subdf3),
     REG_SYM(__subsf3),
+    REG_SYM(__subvdi3),
+    REG_SYM(__subvsi3),
     REG_SYM(__truncdfsf2),
+    REG_SYM(__ucmpdi2),
     REG_SYM(__udivdi3),
     REG_SYM(__udivmoddi4),
     REG_SYM(__udivsi3),
@@ -204,6 +359,7 @@ static SymbolMap target_sym_map[] = {
     REG_ATOMIC_SYMBOLS(4)
     REG_ATOMIC_SYMBOLS(8)
 };
+/* clang-format on */
 
 static void
 set_error_buf(char *error_buf, uint32 error_buf_size, const char *string)
